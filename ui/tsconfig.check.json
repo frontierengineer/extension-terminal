@@ -1,0 +1,45 @@
+{
+  // Type-check harness for the terminal UI. The shipped per-extension tsconfig
+  // has no path mappings (the runtime ESBUILD bundler supplies the
+  // `@frontierengineer/ui` alias + the extension's React when it compiles each
+  // extension — see scripts/build-ui-src.js / backend/extensions/bundler.ts), so a
+  // bare `tsc -p tsconfig.json` can't resolve those specifiers. This config
+  // reproduces the bundler's resolution for a standalone `tsc --noEmit`:
+  //   • `@frontierengineer/ui` / `…/ui/*` → the frontend ui-kit source.
+  //   • `../../types` resolves naturally (it re-exports backend/extensions/types).
+  //   • React + DOM types come from the frontend's @types/react (the extension
+  //     ships no @types of its own — same as at bundle time).
+  //   • @xterm/* resolve from this extension's own node_modules.
+  // It is build-tooling only (never shipped): it is excluded from the src-min
+  // mirror by extension, and nothing imports it.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "types": ["react", "react-dom"],
+    "typeRoots": [
+      "../../../frontend/node_modules/@types",
+      "./node_modules/@types"
+    ],
+    "paths": {
+      "react": ["../../../frontend/node_modules/@types/react"],
+      "react/jsx-runtime": ["../../../frontend/node_modules/@types/react/jsx-runtime"],
+      "react/jsx-dev-runtime": ["../../../frontend/node_modules/@types/react/jsx-dev-runtime"],
+      "react-dom": ["../../../frontend/node_modules/@types/react-dom"],
+      "react-dom/client": ["../../../frontend/node_modules/@types/react-dom/client"],
+      "@frontierengineer/ui": ["../../../frontend/src/ui/index.tsx"],
+      "@frontierengineer/ui/*": ["../../../frontend/src/ui/*"],
+      "@extension-types": ["../../../backend/extensions/types.ts"],
+      "@protocol": ["../../../backend/protocol.ts"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules"]
+}

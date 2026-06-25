@@ -1,0 +1,5 @@
+{
+  "displayName": "Terminal",
+  "defaultColor": "#22d3ee",
+  "description": "An integrated xterm terminal in the bottom panel with a target tree, dropping into a shell on the host, any connected machine, or a reservation's working directory."
+}
