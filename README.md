@@ -24,8 +24,8 @@ and coexist with this one. Copy this extension as a starting point.
 
 ## What it ships
 
-- **The xterm UI** (`ui/components/XtermTerminal.tsx`, `TerminalPanel.tsx`,
-  `ui/ptyClient.ts`) with a target tree (a machine / a slot's directory). The
+- **The xterm UI** (`surface/components/XtermTerminal.tsx`, `TerminalPanel.tsx`,
+  `surface/ptyClient.ts`) with a target tree (a machine / a slot's directory). The
   machine list comes straight from the machines service; the host appears in it
   as the "Server" machine (worker-zero) like any other worker. Opening a shell is
   the **UI-realm action** `terminal.open_shell` (target chosen from the live
