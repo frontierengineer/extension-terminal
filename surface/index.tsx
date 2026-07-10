@@ -47,7 +47,7 @@ export function register(uiProvider: UiProvider): void {
       root.render(
         <TerminalPanel
           terminal={createPtyClient(host.bus)}
-          machines={host.services.machines}
+          machines={host.services.workers}
           workspaces={host.services.workspaces}
           prefs={host.prefs}
         />,

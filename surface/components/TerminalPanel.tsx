@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExtensionSidebar, ExtensionTabs, Split, EmptyState } from '@frontierengineer/ui';
 import { ActionButton } from '@frontierengineer/ui/useAction';
-import type { MachineRegistry, Reservation, UiV1, Workspaces } from '../../../types';
+import type { WorkerRegistry, Reservation, UiV1, Workspaces } from '../../../types';
 import type { PtyClient } from '../ptyClient';
 import { XtermTerminal } from './XtermTerminal';
 import {
@@ -58,7 +58,7 @@ interface ReservationGroup {
 const EXPANDED_KEY = 'tree.expanded';
 type GroupId = 'machines' | 'reservations';
 
-function listMachineRows(machines: MachineRegistry): TargetMachine[] {
+function listMachineRows(machines: WorkerRegistry): TargetMachine[] {
   return machines.list()
     .map((m) => ({ id: m.id, name: m.name, connected: m.connected }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -99,7 +99,7 @@ function Caret({ open }: { open: boolean }) {
 
 export function TerminalPanel({ terminal, machines, workspaces, prefs }: {
   terminal: PtyClient;
-  machines: MachineRegistry;
+  machines: WorkerRegistry;
   workspaces: Workspaces;
   prefs: UiV1['prefs'];
 }) {

@@ -28,7 +28,7 @@
 // The daemon-side `terminal.run_command` (worker realm) lives in worker/index.ts,
 // not here — its run() must execute next to the machine's files.
 
-import type { MachineRegistry, Reservation, UiV1, Workspaces } from '../../types';
+import type { WorkerRegistry, Reservation, UiV1, Workspaces } from '../../types';
 
 // prefs keys the action writes and the panel drains. OPEN carries the resolved
 // target; CLOSE carries an optional session id; both carry a nonce so a repeat
@@ -101,7 +101,7 @@ interface ResolvedTarget { machine: string; cwd?: string; label: string; }
 // is connected. Disconnected targets are omitted — the picker only offers what
 // will actually open.
 async function listTargetOptions(
-  machines: MachineRegistry,
+  machines: WorkerRegistry,
   workspaces: Workspaces,
 ): Promise<{ value: string; label: string; description?: string }[]> {
   const out: { value: string; label: string; description?: string }[] = [];
@@ -128,7 +128,7 @@ async function listTargetOptions(
 
 // The default target: the host's co-located "Server", else the first connected
 // machine. Null when nothing is connected.
-function defaultTarget(machines: MachineRegistry): ResolvedTarget | null {
+function defaultTarget(machines: WorkerRegistry): ResolvedTarget | null {
   const connected = machines.list().filter((m) => m.connected);
   if (connected.length === 0) return null;
   const server = connected.find((m) => m.name === SERVER_MACHINE_NAME) ?? connected[0];
@@ -139,7 +139,7 @@ function defaultTarget(machines: MachineRegistry): ResolvedTarget | null {
 // Null when it doesn't resolve (a stale id, or its machine went away / dropped).
 async function resolveTarget(
   value: string,
-  machines: MachineRegistry,
+  machines: WorkerRegistry,
   workspaces: Workspaces,
 ): Promise<ResolvedTarget | null> {
   if (value.startsWith('machine:')) {
@@ -161,7 +161,7 @@ async function resolveTarget(
 }
 
 export function registerActions(ui: UiV1): void {
-  const { machines, workspaces } = ui.services;
+  const { workers: machines, workspaces } = ui.services;
 
   // The live target picker (machines + directory-backed reservations), resolved
   // when the open-shell modal opens. Published as an option source so the host

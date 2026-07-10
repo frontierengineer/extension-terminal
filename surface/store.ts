@@ -54,7 +54,7 @@ function nextSeqForTarget(target: SpawnTarget): number {
   return max + 1;
 }
 
-// A machine the catalogue knows about (mirrors MachineInfo, trimmed to what the
+// A machine the catalogue knows about (mirrors WorkerInfo, trimmed to what the
 // tree + the open-shell action need).
 export interface TargetMachine {
   id: string;
