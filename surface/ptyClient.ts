@@ -25,9 +25,13 @@ export function createPtyClient(bus: Bus): PtyClient {
     input: (ptyId, data) => bus.extension.request<unknown>('pty.input', { ptyId, data }).then(() => undefined),
     resize: (ptyId, cols, rows) => bus.extension.request<unknown>('pty.resize', { ptyId, cols, rows }).then(() => undefined),
     kill: (ptyId) => bus.extension.request<unknown>('pty.kill', { ptyId }).then(() => undefined),
-    onData: (ptyId, handler) =>
-      bus.extension.subscribe('pty.data', (p: any) => { if (p?.ptyId === ptyId) handler(p.data); }),
-    onExit: (ptyId, handler) =>
-      bus.extension.subscribe('pty.exit', (p: any) => { if (p?.ptyId === ptyId) handler(p); }),
+    onData: (ptyId, handler) => {
+      const sub = bus.extension.subscribe('pty.data', (p: any) => { if (p?.ptyId === ptyId) handler(p.data); });
+      return () => sub.unsubscribe();
+    },
+    onExit: (ptyId, handler) => {
+      const sub = bus.extension.subscribe('pty.exit', (p: any) => { if (p?.ptyId === ptyId) handler(p); });
+      return () => sub.unsubscribe();
+    },
   };
 }

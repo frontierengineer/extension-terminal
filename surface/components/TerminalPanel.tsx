@@ -76,8 +76,8 @@ function listReservationRows(reservations: Reservation[], machineRows: TargetMac
     const m = machineById.get(r.machine);
     out.push({
       reservationId: r.id,
-      name: r.name,
-      extensionId: r.extensionId || 'other',
+      name: r.description,
+      extensionId: r.owner || 'other',
       machine: r.machine,
       machineName: m?.name ?? null,
       connected: m?.connected ?? false,
@@ -115,7 +115,10 @@ export function TerminalPanel({ terminal, machines, workspaces, prefs }: {
   // live via prefs.watch (so a toggle from another of the extension's documents
   // follows too); toggling writes through to prefs.
   const [expanded, setExpanded] = useState<Record<GroupId, boolean>>(() => readExpanded(prefs));
-  useEffect(() => prefs.watch(EXPANDED_KEY, () => setExpanded(readExpanded(prefs))), [prefs]);
+  useEffect(() => {
+    const sub = prefs.watch(EXPANDED_KEY, () => setExpanded(readExpanded(prefs)));
+    return () => sub.unsubscribe();
+  }, [prefs]);
   const toggleGroup = useCallback((group: GroupId) => {
     setExpanded((prev) => {
       const next = { ...prev, [group]: !prev[group] };
@@ -139,7 +142,8 @@ export function TerminalPanel({ terminal, machines, workspaces, prefs }: {
 
   useEffect(() => {
     void refresh();
-    return machines.watch(() => void refresh());
+    const sub = machines.watch(() => void refresh());
+    return () => sub.unsubscribe();
   }, [refresh, machines]);
 
   // Drain the action command markers (open_shell / close_shell write them to
@@ -176,7 +180,7 @@ export function TerminalPanel({ terminal, machines, workspaces, prefs }: {
     applyClose();
     const unOpen = prefs.watch(OPEN_CMD_KEY, applyOpen);
     const unClose = prefs.watch(CLOSE_CMD_KEY, applyClose);
-    return () => { unOpen(); unClose(); };
+    return () => { unOpen.unsubscribe(); unClose.unsubscribe(); };
   }, [prefs]);
 
   // Seed one shell on the first connected machine, once. Runs after the machine

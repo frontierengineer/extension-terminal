@@ -190,7 +190,7 @@ export function register(serverProvider: ServerProvider): void {
 
   // A machine dropping takes its ptys with it — surface the ended state so
   // the UI's shells render "connection lost" instead of hanging.
-  const unwatch = services.workers.watch((event) => {
+  const workersSub = services.workers.watch((event) => {
     if (event.type !== 'disconnected' || !event.machine) return;
     for (const [ptyId, rec] of Array.from(remotePtys.entries())) {
       if (rec.machine !== event.machine) continue;
@@ -200,7 +200,7 @@ export function register(serverProvider: ServerProvider): void {
   });
 
   server.deregister(() => {
-    unwatch();
+    workersSub.unsubscribe();
     for (const [ptyId, rec] of Array.from(remotePtys.entries())) {
       sendRemote(ptyId, rec.machine, { type: 'kill', ptyId });
       remotePtys.delete(ptyId);

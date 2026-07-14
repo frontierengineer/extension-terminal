@@ -121,7 +121,7 @@ async function listTargetOptions(
     const m = machineById.get(r.machine);
     if (!m?.connected) continue;
     const where = m.name ? `${cwd} on ${m.name}` : cwd;
-    out.push({ value: reservationValue(r.id), label: `${r.name} (${r.extensionId || 'other'})`, description: where });
+    out.push({ value: reservationValue(r.id), label: `${r.description} (${r.owner || 'other'})`, description: where });
   }
   return out;
 }
@@ -155,7 +155,7 @@ async function resolveTarget(
     if (!r) return null;
     const cwd = r.descriptor.slotDir || r.descriptor.canonicalDir;
     const m = machines.get(r.machine);
-    return cwd && m?.connected ? { machine: r.machine, cwd, label: r.name } : null;
+    return cwd && m?.connected ? { machine: r.machine, cwd, label: r.description } : null;
   }
   return null;
 }
