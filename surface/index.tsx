@@ -28,13 +28,15 @@ export function register(surfaceProvider: SurfaceProvider): void {
   // The DAEMON: the always-on headless component that hosts the app's operations.
   // It declares them ONCE as actions (open/close a shell) + the live target option
   // source they pick from. An action's run() resolves against the daemon's services
-  // and writes a command marker to prefs, which the mounted <TerminalPanel> drains —
-  // so the same op runs from the in-app button, the host modal, an agent
+  // and writes a command marker to localSettings (for read-at-mount) while poking a
+  // bus.extension event (for the live case), which the mounted <TerminalPanel>
+  // drains — so the same op runs from the in-app button, the host modal, an agent
   // (frontier.run_action), or the scheduler. The worker-realm terminal.run_command
   // lives in worker/index.ts.
   surface.daemon.register({
     mount(ctx) {
       registerActions(ctx);
+      return null;
     },
   });
 
@@ -43,9 +45,10 @@ export function register(surfaceProvider: SurfaceProvider): void {
     title: 'Terminals',
     icon: TERMINAL_ICON,
     color: '#22d3ee',
+    requires: null,
     // The app owns host.container entirely. mount() runs ONCE (the host warms
     // this app's webview once, then only toggles visibility); the returned
-    // teardown runs if the user quits Terminal from the launcher — which
+    // dispose() runs if the user quits Terminal from the launcher — which
     // unmounts every open shell's pty along with it.
     mount(host: ExtensionHost) {
       const root = createRoot(host.container);
@@ -54,10 +57,11 @@ export function register(surfaceProvider: SurfaceProvider): void {
           terminal={createPtyClient(host.services.bus)}
           machines={host.services.workers}
           workspaces={host.services.workspaces}
-          prefs={host.services.prefs}
+          localSettings={host.services.localSettings}
+          bus={host.services.bus}
         />,
       );
-      return () => root.unmount();
+      return { dispose: () => root.unmount() };
     },
   });
 }

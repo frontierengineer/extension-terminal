@@ -33,9 +33,12 @@ and coexist with this one. Copy this extension as a starting point.
   reservation; omit it for the default "Server"), with `terminal.close_shell` to
   close one. The tree rows, the tab strip's **+**, and the empty-state button all
   run `open_shell`, so an agent (`frontier.run_action`) and the scheduler reach
-  the same op. Because the action's `run()` may execute in the controller realm
-  (separate memory from the app), it writes a command marker to `ui.prefs` that the
-  mounted panel drains — the cross-realm channel spaces' `create_space` also uses.
+  the same op. Because the action's `run()` may execute in the daemon realm
+  (separate memory from the app), it writes a command marker to `services.localSettings`
+  (for read-at-mount) and pokes a `services.bus.extension` event on the same key (for
+  the live case — `localSettings` is device-local storage, not a signaling channel).
+  The mounted panel reads the marker on mount and subscribes to the bus event, then
+  drains it — one cross-realm channel for every trigger.
 - **A host-side bridge** (`host/index.ts`) that owns the `pty.*` bus channel
   its UI calls and routes every request to the worker component over the worker
   channel — serving the daemon's pty back to the UI. The host process spawns no

@@ -135,11 +135,12 @@ export function register(provider: WorkerProvider): void {
       'unattended (bind the schedule to a reservation to run it in that slot). Provide `command` (the executable, ' +
       'e.g. "git") and optional space-separated `args` (e.g. "status --porcelain") and a working directory `cwd`.',
     realm: 'worker',
+    output: null,
     input: {
       fields: [
-        { key: 'command', type: 'string', label: 'Command', required: true, placeholder: 'e.g. git' },
-        { key: 'args', type: 'string', label: 'Arguments', description: 'Space-separated arguments. Optional.' },
-        { key: 'cwd', type: 'string', label: 'Working directory', description: 'Absolute path; defaults to the worker home. Optional.' },
+        { key: 'command', type: 'string', label: 'Command', description: null, required: true, default: null, placeholder: 'e.g. git' },
+        { key: 'args', type: 'string', label: 'Arguments', description: 'Space-separated arguments. Optional.', required: null, default: null, placeholder: null },
+        { key: 'cwd', type: 'string', label: 'Working directory', description: 'Absolute path; defaults to the worker home. Optional.', required: null, default: null, placeholder: null },
       ],
     },
     async run(_ctx, input) {

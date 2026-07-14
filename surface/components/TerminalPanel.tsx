@@ -97,11 +97,12 @@ function Caret({ open }: { open: boolean }) {
   );
 }
 
-export function TerminalPanel({ terminal, machines, workspaces, prefs }: {
+export function TerminalPanel({ terminal, machines, workspaces, localSettings, bus }: {
   terminal: PtyClient;
   machines: WorkerRegistry;
   workspaces: Workspaces;
-  prefs: SurfaceServices['prefs'];
+  localSettings: SurfaceServices['localSettings'];
+  bus: SurfaceServices['bus'];
 }) {
   // Session + catalogue state live in the module store so the registered actions
   // (open_shell / close_shell) and this panel share one source of truth.
@@ -111,21 +112,18 @@ export function TerminalPanel({ terminal, machines, workspaces, prefs }: {
   const focusNonce = useFocusNonce();
   const { machines: machineRows, reservations: reservationRows } = catalogue;
 
-  // Persisted expand/collapse of the two tree groups. Seeded from prefs and kept
-  // live via prefs.watch (so a toggle from another of the extension's documents
-  // follows too); toggling writes through to prefs.
-  const [expanded, setExpanded] = useState<Record<GroupId, boolean>>(() => readExpanded(prefs));
-  useEffect(() => {
-    const sub = prefs.watch(EXPANDED_KEY, () => setExpanded(readExpanded(prefs)));
-    return () => sub.unsubscribe();
-  }, [prefs]);
+  // Persisted expand/collapse of the two tree groups. Seeded from localSettings on
+  // mount; toggling writes through to localSettings. This is device-local UI state,
+  // not a signaling channel, so there is no live cross-document sync here — a toggle
+  // in another of the extension's open documents lands on that document's next mount.
+  const [expanded, setExpanded] = useState<Record<GroupId, boolean>>(() => readExpanded(localSettings));
   const toggleGroup = useCallback((group: GroupId) => {
     setExpanded((prev) => {
       const next = { ...prev, [group]: !prev[group] };
-      prefs.set(EXPANDED_KEY, next);
+      localSettings.set(EXPANDED_KEY, next);
       return next;
     });
-  }, [prefs]);
+  }, [localSettings]);
 
   // The auto-seed fires AT MOST ONCE — once the user has had (or opened) a
   // session, closing the last tab leaves the stage empty rather than respawning.
@@ -146,42 +144,43 @@ export function TerminalPanel({ terminal, machines, workspaces, prefs }: {
     return () => sub.unsubscribe();
   }, [refresh, machines]);
 
-  // Drain the action command markers (open_shell / close_shell write them to
-  // prefs; see ../actions for why prefs is the channel). An action's run()
-  // executes in the surface DAEMON (an agent, the palette, the scheduler, or a
-  // host-chrome caller like the Machines view's "Terminal" button) — separate
-  // memory from this app — so it can't open a tab directly; it writes a marker and
-  // we apply it HERE. We CONSUME each marker once applied (flip `consumed` in
-  // place), then apply only UNconsumed ones: that way we handle a marker both when
-  // it arrives live (prefs.watch, the warm app) AND once on mount — a marker set
-  // while this app was COLD (e.g. opened straight onto a machine from the Machines
-  // view) is fulfilled on the next mount rather than silently dropped, while a
-  // consumed one never replays on a remount. Consuming FIRST makes the re-entrant
-  // watch tick a no-op. (The in-app <ActionButton> runs in THIS realm, so its
-  // marker lands the same way — one path for every trigger.)
+  // Drain the action command markers (open_shell / close_shell store them in
+  // localSettings and poke a bus.extension event; see ../actions for the two-channel
+  // reason). An action's run() executes in the surface DAEMON (an agent, the
+  // palette, the scheduler, or a host-chrome caller like the Machines view's
+  // "Terminal" button) — separate memory from this app — so it can't open a tab
+  // directly; it writes a marker and we apply it HERE. We read the marker from
+  // localSettings and CONSUME it once applied (flip `consumed` in place), then apply
+  // only UNconsumed ones: that way we handle a marker both when it arrives live (the
+  // bus event, on the warm app) AND once on mount — a marker set while this app was
+  // COLD (e.g. opened straight onto a machine from the Machines view) is fulfilled on
+  // the next mount rather than silently dropped, while a consumed one never replays
+  // on a remount. Consuming FIRST makes a re-entrant bus tick a no-op. (The in-app
+  // <ActionButton> runs the same daemon action, so its marker lands the same way —
+  // one path for every trigger.)
   useEffect(() => {
     const applyOpen = () => {
-      const cmd = prefs.get<OpenCommand>(OPEN_CMD_KEY);
+      const cmd = localSettings.get<OpenCommand>(OPEN_CMD_KEY);
       if (!cmd || cmd.consumed || typeof cmd.machine !== 'string') return;
-      prefs.set(OPEN_CMD_KEY, { ...cmd, consumed: true });
+      localSettings.set(OPEN_CMD_KEY, { ...cmd, consumed: true });
       // A requested open IS the seed for this mount — don't also auto-open "Server".
       seededRef.current = true;
       openSession({ machine: cmd.machine, cwd: cmd.cwd, label: cmd.label });
     };
     const applyClose = () => {
-      const cmd = prefs.get<CloseCommand>(CLOSE_CMD_KEY);
+      const cmd = localSettings.get<CloseCommand>(CLOSE_CMD_KEY);
       if (!cmd || cmd.consumed) return;
-      prefs.set(CLOSE_CMD_KEY, { ...cmd, consumed: true });
+      localSettings.set(CLOSE_CMD_KEY, { ...cmd, consumed: true });
       const id = cmd.sessionId || getSelected() || getLastSessionId();
       if (id) closeSession(id);
     };
-    // Apply anything left unconsumed while we were cold, then follow live writes.
+    // Apply anything left unconsumed while we were cold, then follow live pokes.
     applyOpen();
     applyClose();
-    const unOpen = prefs.watch(OPEN_CMD_KEY, applyOpen);
-    const unClose = prefs.watch(CLOSE_CMD_KEY, applyClose);
+    const unOpen = bus.extension.subscribe(OPEN_CMD_KEY, applyOpen);
+    const unClose = bus.extension.subscribe(CLOSE_CMD_KEY, applyClose);
     return () => { unOpen.unsubscribe(); unClose.unsubscribe(); };
-  }, [prefs]);
+  }, [localSettings, bus]);
 
   // Seed one shell on the first connected machine, once. Runs after the machine
   // list populates (worker-zero connects shortly after boot), so the app opens
@@ -405,7 +404,7 @@ function ShellGlyph() {
 }
 
 // The persisted expand/collapse state of the two tree groups, defaulting both
-// open. Read on mount and re-read on every prefs.watch tick.
-function readExpanded(prefs: SurfaceServices['prefs']): Record<GroupId, boolean> {
-  return { machines: true, reservations: true, ...prefs.get<Record<GroupId, boolean>>(EXPANDED_KEY) };
+// open. Read from localSettings on mount.
+function readExpanded(localSettings: SurfaceServices['localSettings']): Record<GroupId, boolean> {
+  return { machines: true, reservations: true, ...localSettings.get<Record<GroupId, boolean>>(EXPANDED_KEY) };
 }

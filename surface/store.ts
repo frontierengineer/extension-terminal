@@ -6,10 +6,12 @@
 // This store lives ONLY in the app's surface realm. The registered actions
 // (open_shell / close_shell, ../actions) do NOT mutate it directly: their run()
 // executes in the separate-memory surface daemon (agent / palette / scheduler),
-// so they write a command marker to prefs and the panel drains it
-// into this store by calling openSession() / closeSession() here. So every
-// trigger — in-app button, host modal, agent, scheduler — converges on this one
-// store, the same prefs-as-channel pattern spaces uses for create_space.
+// so they write a command marker to localSettings (for read-at-mount) and poke a
+// bus.extension event on the same key (for the live case — localSettings is
+// storage, not a signaling channel), and the panel drains it into this store by
+// calling openSession() / closeSession() here. So every trigger — in-app button,
+// host modal, agent, scheduler — converges on this one store, the same
+// localSettings-plus-bus marker pattern spaces uses for create_space.
 //
 // Built on React 18's useSyncExternalStore so it adds NO dependency to this lean
 // extension (zustand would drag a package in; the docs warn against bloating a

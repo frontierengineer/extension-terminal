@@ -9,12 +9,15 @@
 // terminals is a SEPARATE component in SEPARATE MEMORY — the daemon can't touch the
 // app's React state. So an action does NOT mutate the session store directly; its
 // run() resolves the request against the daemon's SERVICES and writes a COMMAND
-// MARKER to prefs (ctx.services.prefs). The mounted <TerminalPanel> watches that
-// key (prefs.watch) and applies it — open/close a shell — in its own realm. One
-// code path then works identically whether the trigger was the in-app button, the
-// host-generated modal, an agent, or the scheduler. (prefs is the device-local
-// cross-document channel the host gives every extension; markers carry a monotonic
-// nonce so two identical opens in a row both fire.)
+// MARKER two ways: it stores the marker in localSettings (for read-at-mount, so a
+// marker set while the app was cold is drained on the next mount) AND pokes a
+// bus.extension event on the same key (for the live case — localSettings is storage,
+// not a signaling channel, so cross-component reaction rides the bus). The mounted
+// <TerminalPanel> reads localSettings on mount and subscribes to the bus event, then
+// applies the marker — open/close a shell — in its own realm. One code path works
+// identically whether the trigger was the in-app button, the host-generated modal,
+// an agent, or the scheduler. (Markers carry a monotonic nonce so two identical
+// opens in a row both fire.)
 //
 // These replace the app's only bespoke "pick a target" interaction: opening a
 // shell used to be a raw click on a tree row with no agent/scheduler surface and
@@ -28,15 +31,15 @@
 
 import type { WorkerRegistry, Reservation, DaemonContext, Workspaces } from '../../types';
 
-// prefs keys the action writes and the panel drains. OPEN carries the resolved
-// target; CLOSE carries an optional session id; both carry a nonce so a repeat
-// of the same request still triggers a prefs.watch tick (a cross-realm write only
-// reaches another document as a `storage` event when the value actually changes).
-// `consumed` is flipped by the panel once it applies a marker: an UNconsumed one
-// is a request nobody has handled yet, so the panel applies it both live (warm
-// app) and once on mount — a marker set while the app was COLD (an agent, the
-// scheduler, or the Machines view's "Terminal" button opening straight onto a
-// machine) is fulfilled on the next mount instead of being silently dropped.
+// localSettings keys the action writes and the panel drains, doubling as the
+// bus.extension event topics the action pokes for the live case. OPEN carries the
+// resolved target; CLOSE carries an optional session id; both carry a nonce so a
+// repeat of the same request is still a distinct marker. `consumed` is flipped by
+// the panel once it applies a marker: an UNconsumed one is a request nobody has
+// handled yet, so the panel applies it both live (the bus event, warm app) and once
+// on mount (read from localSettings) — a marker set while the app was COLD (an
+// agent, the scheduler, or the Machines view's "Terminal" button opening straight
+// onto a machine) is fulfilled on the next mount instead of being silently dropped.
 export const OPEN_CMD_KEY = 'cmd.open';
 export const CLOSE_CMD_KEY = 'cmd.close';
 
@@ -101,8 +104,8 @@ interface ResolvedTarget { machine: string; cwd?: string; label: string; }
 async function listTargetOptions(
   machines: WorkerRegistry,
   workspaces: Workspaces,
-): Promise<{ value: string; label: string; description?: string }[]> {
-  const out: { value: string; label: string; description?: string }[] = [];
+): Promise<{ value: string; label: string; description: string | null }[]> {
+  const out: { value: string; label: string; description: string | null }[] = [];
   const machineById = new Map(machines.list().map((m) => [m.id, m]));
   for (const m of machines.list()) {
     if (!m.connected) continue;
@@ -183,6 +186,8 @@ export function registerActions(ctx: DaemonContext): void {
       'else the first connected machine). Several shells can be open on the same target at once. Returns the new ' +
       'target’s label. This only opens an interactive shell; to run a single command unattended use ' +
       'terminal.run_command.',
+    realm: null,
+    output: null,
     input: {
       fields: [
         {
@@ -191,6 +196,9 @@ export function registerActions(ctx: DaemonContext): void {
           source: TARGET_SOURCE_ID,
           label: 'Target',
           description: 'A connected machine or a directory-backed reservation. Omit to use the default target.',
+          required: null,
+          noneLabel: null,
+          emptyHint: null,
         },
       ],
     },
@@ -212,7 +220,8 @@ export function registerActions(ctx: DaemonContext): void {
       }
 
       const cmd: OpenCommand = { nonce: nextNonce(), machine: target.machine, cwd: target.cwd, label: target.label };
-      ctx.services.prefs.set(OPEN_CMD_KEY, cmd);
+      ctx.services.localSettings.set(OPEN_CMD_KEY, cmd);
+      ctx.services.bus.extension.publish(OPEN_CMD_KEY, cmd);
       return { target: target.label };
     },
   });
@@ -226,16 +235,19 @@ export function registerActions(ctx: DaemonContext): void {
     description:
       'Close an open terminal session, killing its shell. Closes the focused session by default, or pass a ' +
       '`sessionId` (as returned in the app) to close a specific one. No-op if nothing is open.',
+    realm: null,
+    output: null,
     input: {
       fields: [
-        { key: 'sessionId', type: 'string', label: 'Session id', description: 'The session to close. Omit to close the focused one.' },
+        { key: 'sessionId', type: 'string', label: 'Session id', description: 'The session to close. Omit to close the focused one.', required: null, default: null, placeholder: null },
       ],
     },
     run(_ctx, input) {
       const args = (input ?? {}) as { sessionId?: string };
       const sessionId = String(args.sessionId ?? '').trim() || undefined;
       const cmd: CloseCommand = { nonce: nextNonce(), sessionId };
-      ctx.services.prefs.set(CLOSE_CMD_KEY, cmd);
+      ctx.services.localSettings.set(CLOSE_CMD_KEY, cmd);
+      ctx.services.bus.extension.publish(CLOSE_CMD_KEY, cmd);
       return { requested: sessionId ?? 'focused' };
     },
   });
