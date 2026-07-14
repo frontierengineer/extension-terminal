@@ -199,11 +199,11 @@ export function register(hostProvider: HostProvider): void {
     }
   });
 
-  host.deregister(() => {
+  host.deregister({ teardown: () => {
     workersSub.unsubscribe();
     for (const [ptyId, rec] of Array.from(remotePtys.entries())) {
       sendRemote(ptyId, rec.machine, { type: 'kill', ptyId });
       remotePtys.delete(ptyId);
     }
-  });
+  } });
 }
