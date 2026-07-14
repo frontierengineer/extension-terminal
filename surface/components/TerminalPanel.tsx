@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExtensionSidebar, ExtensionTabs, Split, EmptyState } from '@frontierengineer/ui';
 import { ActionButton } from '@frontierengineer/ui/useAction';
-import type { WorkerRegistry, Reservation, SurfaceV1, Workspaces } from '../../../types';
+import type { WorkerRegistry, Reservation, SurfaceServices, Workspaces } from '../../../types';
 import type { PtyClient } from '../ptyClient';
 import { XtermTerminal } from './XtermTerminal';
 import {
@@ -101,7 +101,7 @@ export function TerminalPanel({ terminal, machines, workspaces, prefs }: {
   terminal: PtyClient;
   machines: WorkerRegistry;
   workspaces: Workspaces;
-  prefs: SurfaceV1['prefs'];
+  prefs: SurfaceServices['prefs'];
 }) {
   // Session + catalogue state live in the module store so the registered actions
   // (open_shell / close_shell) and this panel share one source of truth.
@@ -147,8 +147,8 @@ export function TerminalPanel({ terminal, machines, workspaces, prefs }: {
   }, [refresh, machines]);
 
   // Drain the action command markers (open_shell / close_shell write them to
-  // prefs; see ../actions for why prefs is the channel). An action's run() may
-  // execute in the CONTROLLER realm (an agent, the palette, the scheduler, or a
+  // prefs; see ../actions for why prefs is the channel). An action's run()
+  // executes in the surface DAEMON (an agent, the palette, the scheduler, or a
   // host-chrome caller like the Machines view's "Terminal" button) — separate
   // memory from this app — so it can't open a tab directly; it writes a marker and
   // we apply it HERE. We CONSUME each marker once applied (flip `consumed` in
@@ -406,6 +406,6 @@ function ShellGlyph() {
 
 // The persisted expand/collapse state of the two tree groups, defaulting both
 // open. Read on mount and re-read on every prefs.watch tick.
-function readExpanded(prefs: SurfaceV1['prefs']): Record<GroupId, boolean> {
+function readExpanded(prefs: SurfaceServices['prefs']): Record<GroupId, boolean> {
   return { machines: true, reservations: true, ...prefs.get<Record<GroupId, boolean>>(EXPANDED_KEY) };
 }

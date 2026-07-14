@@ -1,22 +1,20 @@
-// The terminal app's CONTROLLER-realm actions — the operations a user or agent
-// can DO, declared once (SurfaceV1.actions.register) so each gets the three invokers
+// The terminal app's DAEMON actions — the operations a user or agent can DO,
+// declared once (DaemonContext.actions.register) so each gets the three invokers
 // the host derives for free: a generated human modal, an agent tool
 // (frontier.run_action), and a scheduler entry.
 //
-// REALM NOTE (the crux of how these reach the live app). register() runs in BOTH
-// the controller realm (declarations → host; an agent/palette/scheduler runs the
-// closures HERE) and the app's surface realm (declarations suppressed; the in-app
-// <ActionButton> runs the closures THERE). The two realms are SEPARATE MEMORY —
-// the controller can't touch the surface's React state (same constraint spaces'
-// create_space documents). So an action does NOT mutate the session store
-// directly; its run() resolves the request against the host SERVICES (available
-// in both realms) and writes a COMMAND MARKER to ui.prefs. The mounted
-// <TerminalPanel> watches that key (prefs.watch) and applies it — open/close a
-// shell — in its own realm. One code path then works identically whether the
-// trigger was the in-app button, the host-generated modal, an agent, or the
-// scheduler. (prefs is the device-local cross-document channel the host gives
-// every extension; markers carry a monotonic nonce so two identical opens in a
-// row both fire.)
+// REALM NOTE (the crux of how these reach the live app). These run in the surface
+// daemon: the always-on headless component where the run() closures live and where
+// an agent, the palette, or the scheduler invokes them. The app that renders the
+// terminals is a SEPARATE component in SEPARATE MEMORY — the daemon can't touch the
+// app's React state. So an action does NOT mutate the session store directly; its
+// run() resolves the request against the daemon's SERVICES and writes a COMMAND
+// MARKER to prefs (ctx.services.prefs). The mounted <TerminalPanel> watches that
+// key (prefs.watch) and applies it — open/close a shell — in its own realm. One
+// code path then works identically whether the trigger was the in-app button, the
+// host-generated modal, an agent, or the scheduler. (prefs is the device-local
+// cross-document channel the host gives every extension; markers carry a monotonic
+// nonce so two identical opens in a row both fire.)
 //
 // These replace the app's only bespoke "pick a target" interaction: opening a
 // shell used to be a raw click on a tree row with no agent/scheduler surface and
@@ -25,10 +23,10 @@
 // real picker of connected machines + directory-backed reservations while an
 // agent passes the same target id as a string.
 //
-// The daemon-side `terminal.run_command` (worker realm) lives in worker/index.ts,
-// not here — its run() must execute next to the machine's files.
+// The worker-realm `terminal.run_command` lives in worker/index.ts, not here —
+// its run() must execute next to the machine's files.
 
-import type { WorkerRegistry, Reservation, SurfaceV1, Workspaces } from '../../types';
+import type { WorkerRegistry, Reservation, DaemonContext, Workspaces } from '../../types';
 
 // prefs keys the action writes and the panel drains. OPEN carries the resolved
 // target; CLOSE carries an optional session id; both carry a nonce so a repeat
@@ -160,13 +158,13 @@ async function resolveTarget(
   return null;
 }
 
-export function registerActions(ui: SurfaceV1): void {
-  const { workers: machines, workspaces } = ui.services;
+export function registerActions(ctx: DaemonContext): void {
+  const { workers: machines, workspaces } = ctx.services;
 
   // The live target picker (machines + directory-backed reservations), resolved
   // when the open-shell modal opens. Published as an option source so the host
   // renders a real dropdown and an agent still passes a plain string id.
-  ui.optionSources.register({
+  ctx.optionSources.register({
     id: TARGET_SOURCE_ID,
     title: 'Terminal target',
     list: () => listTargetOptions(machines, workspaces),
@@ -175,7 +173,7 @@ export function registerActions(ui: SurfaceV1): void {
   // Open a new shell on a target. The canonical "drop into a shell" op — the tab
   // strip's "+", the empty-stage button, an agent, and the scheduler all run THIS;
   // the tree rows are a one-click shortcut for it pre-aimed at a row's target.
-  ui.actions.register({
+  ctx.actions.register({
     id: 'terminal.open_shell',
     title: 'Open a shell',
     description:
@@ -214,7 +212,7 @@ export function registerActions(ui: SurfaceV1): void {
       }
 
       const cmd: OpenCommand = { nonce: nextNonce(), machine: target.machine, cwd: target.cwd, label: target.label };
-      ui.prefs.set(OPEN_CMD_KEY, cmd);
+      ctx.services.prefs.set(OPEN_CMD_KEY, cmd);
       return { target: target.label };
     },
   });
@@ -222,7 +220,7 @@ export function registerActions(ui: SurfaceV1): void {
   // Close a shell — the focused one by default, or one named by session id. Gives
   // the agent/scheduler a way to tidy up shells. (The tab × and the recovery
   // overlays close locally; this is the described, agent-callable op.)
-  ui.actions.register({
+  ctx.actions.register({
     id: 'terminal.close_shell',
     title: 'Close a shell',
     description:
@@ -237,7 +235,7 @@ export function registerActions(ui: SurfaceV1): void {
       const args = (input ?? {}) as { sessionId?: string };
       const sessionId = String(args.sessionId ?? '').trim() || undefined;
       const cmd: CloseCommand = { nonce: nextNonce(), sessionId };
-      ui.prefs.set(CLOSE_CMD_KEY, cmd);
+      ctx.services.prefs.set(CLOSE_CMD_KEY, cmd);
       return { requested: sessionId ?? 'focused' };
     },
   });

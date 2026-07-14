@@ -22,18 +22,23 @@ import './styles.css';
 // 0 0 16 16 viewBox apps use, stroked in currentColor.
 const TERMINAL_ICON = 'M3.5 4l3 3-3 3M8.5 11h4';
 
-export function register(uiProvider: SurfaceProvider): void {
-  const ui = uiProvider.version(1);
+export function register(surfaceProvider: SurfaceProvider): void {
+  const surface = surfaceProvider.version(1);
 
-  // Declare the app's operations ONCE as actions (open/close a shell) + the live
-  // target option source they pick from. register() runs in BOTH realms; an
-  // action's run() resolves against host services and writes a command marker to
-  // ui.prefs, which the mounted <TerminalPanel> drains — so the same op runs from
-  // the in-app button, the host modal, an agent (frontier.run_action), or the
-  // scheduler. The daemon-side terminal.run_command lives in worker/index.ts.
-  registerActions(ui);
+  // The DAEMON: the always-on headless component that hosts the app's operations.
+  // It declares them ONCE as actions (open/close a shell) + the live target option
+  // source they pick from. An action's run() resolves against the daemon's services
+  // and writes a command marker to prefs, which the mounted <TerminalPanel> drains —
+  // so the same op runs from the in-app button, the host modal, an agent
+  // (frontier.run_action), or the scheduler. The worker-realm terminal.run_command
+  // lives in worker/index.ts.
+  surface.daemon.register({
+    mount(ctx) {
+      registerActions(ctx);
+    },
+  });
 
-  ui.application.register({
+  surface.application.register({
     id: 'terminal',
     title: 'Terminals',
     icon: TERMINAL_ICON,
@@ -46,10 +51,10 @@ export function register(uiProvider: SurfaceProvider): void {
       const root = createRoot(host.container);
       root.render(
         <TerminalPanel
-          terminal={createPtyClient(host.bus)}
+          terminal={createPtyClient(host.services.bus)}
           machines={host.services.workers}
           workspaces={host.services.workspaces}
-          prefs={host.prefs}
+          prefs={host.services.prefs}
         />,
       );
       return () => root.unmount();

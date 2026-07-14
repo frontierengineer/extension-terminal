@@ -5,8 +5,8 @@
 //
 // This store lives ONLY in the app's surface realm. The registered actions
 // (open_shell / close_shell, ../actions) do NOT mutate it directly: their run()
-// may execute in the separate-memory controller realm (agent / palette /
-// scheduler), so they write a command marker to ui.prefs and the panel drains it
+// executes in the separate-memory surface daemon (agent / palette / scheduler),
+// so they write a command marker to prefs and the panel drains it
 // into this store by calling openSession() / closeSession() here. So every
 // trigger — in-app button, host modal, agent, scheduler — converges on this one
 // store, the same prefs-as-channel pattern spaces uses for create_space.
