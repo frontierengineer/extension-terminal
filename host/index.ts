@@ -19,7 +19,7 @@
 // EMPTY argv (no command string, no interpolation) and user keystrokes only
 // ever travel over the pty stream as input bytes.
 
-import type { ServerProvider, WorkerChannel } from '../../types';
+import type { HostProvider, WorkerChannel } from '../../types';
 
 const PTY_DATA_FLUSH_BYTES = 64 * 1024; // bound a single publish payload
 
@@ -48,9 +48,9 @@ function genPtyId(): string {
   return `pty_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function register(serverProvider: ServerProvider): void {
-  const server = serverProvider.version(1);
-  const { bus, workers, services } = server;
+export function register(hostProvider: HostProvider): void {
+  const host = hostProvider.version(1);
+  const { bus, workers, services } = host;
 
   // ptyId → remote routing record; the worker component shares the ptyId.
   const remotePtys = new Map<string, { machine: string }>();
@@ -199,7 +199,7 @@ export function register(serverProvider: ServerProvider): void {
     }
   });
 
-  server.deregister(() => {
+  host.deregister(() => {
     workersSub.unsubscribe();
     for (const [ptyId, rec] of Array.from(remotePtys.entries())) {
       sendRemote(ptyId, rec.machine, { type: 'kill', ptyId });

@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import type { UiProvider, ExtensionHost } from '../../types';
+import type { SurfaceProvider, ExtensionHost } from '../../types';
 import { TerminalPanel } from './components/TerminalPanel';
 import { createPtyClient } from './ptyClient';
 import { registerActions } from './actions';
@@ -22,7 +22,7 @@ import './styles.css';
 // 0 0 16 16 viewBox apps use, stroked in currentColor.
 const TERMINAL_ICON = 'M3.5 4l3 3-3 3M8.5 11h4';
 
-export function register(uiProvider: UiProvider): void {
+export function register(uiProvider: SurfaceProvider): void {
   const ui = uiProvider.version(1);
 
   // Declare the app's operations ONCE as actions (open/close a shell) + the live

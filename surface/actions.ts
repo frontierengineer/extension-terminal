@@ -1,5 +1,5 @@
 // The terminal app's CONTROLLER-realm actions — the operations a user or agent
-// can DO, declared once (UiV1.actions.register) so each gets the three invokers
+// can DO, declared once (SurfaceV1.actions.register) so each gets the three invokers
 // the host derives for free: a generated human modal, an agent tool
 // (frontier.run_action), and a scheduler entry.
 //
@@ -28,7 +28,7 @@
 // The daemon-side `terminal.run_command` (worker realm) lives in worker/index.ts,
 // not here — its run() must execute next to the machine's files.
 
-import type { WorkerRegistry, Reservation, UiV1, Workspaces } from '../../types';
+import type { WorkerRegistry, Reservation, SurfaceV1, Workspaces } from '../../types';
 
 // prefs keys the action writes and the panel drains. OPEN carries the resolved
 // target; CLOSE carries an optional session id; both carry a nonce so a repeat
@@ -160,7 +160,7 @@ async function resolveTarget(
   return null;
 }
 
-export function registerActions(ui: UiV1): void {
+export function registerActions(ui: SurfaceV1): void {
   const { workers: machines, workspaces } = ui.services;
 
   // The live target picker (machines + directory-backed reservations), resolved

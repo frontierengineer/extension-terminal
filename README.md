@@ -4,7 +4,7 @@ A real shell, in the app: an integrated xterm terminal in the bottom panel that
 drops into a shell on any connected machine — including the host's own
 co-located worker ("Server") — or a reservation's working directory.
 
-Capabilities: `ui` (xterm + the target tree), `server` (the host-side pty
+Capabilities: `surface` (xterm + the target tree), `host` (the host-side pty
 bridge), and `worker` (node-pty on the machine).
 
 ## A marketplace extension — and the template for terminal-like ones
@@ -15,11 +15,11 @@ extracted so the core never depends on a shell being present — nothing in core
 hard-coded to it, and the Machines view does not assume it's installed.
 
 It is the **reference/template for building terminal-like extensions**. Nothing
-about it is privileged: it's a plain extension that composes the `server`
-(host-side pty bridge) + `worker` (node-pty next to a machine's files) + `ui`
+about it is privileged: it's a plain extension that composes the `host`
+(host-side pty bridge) + `worker` (node-pty next to a machine's files) + `surface`
 capabilities, and the platform attaches NO special meaning to it. Another
 extension can ship its own terminal experience the same way — register its own
-app + `terminal.open_shell`-style actions and run its own server/worker halves —
+app + `terminal.open_shell`-style actions and run its own host/worker halves —
 and coexist with this one. Copy this extension as a starting point.
 
 ## What it ships
@@ -36,7 +36,7 @@ and coexist with this one. Copy this extension as a starting point.
   the same op. Because the action's `run()` may execute in the controller realm
   (separate memory from the app), it writes a command marker to `ui.prefs` that the
   mounted panel drains — the cross-realm channel spaces' `create_space` also uses.
-- **A host-side bridge** (`server/index.ts`) that owns the `pty.*` bus channel
+- **A host-side bridge** (`host/index.ts`) that owns the `pty.*` bus channel
   its UI calls and routes every request to the worker component over the worker
   channel — serving the daemon's pty back to the UI. The host process spawns no
   pty itself; there is no in-process / pseudo-machine path.

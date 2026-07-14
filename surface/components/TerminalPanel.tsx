@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExtensionSidebar, ExtensionTabs, Split, EmptyState } from '@frontierengineer/ui';
 import { ActionButton } from '@frontierengineer/ui/useAction';
-import type { WorkerRegistry, Reservation, UiV1, Workspaces } from '../../../types';
+import type { WorkerRegistry, Reservation, SurfaceV1, Workspaces } from '../../../types';
 import type { PtyClient } from '../ptyClient';
 import { XtermTerminal } from './XtermTerminal';
 import {
@@ -101,7 +101,7 @@ export function TerminalPanel({ terminal, machines, workspaces, prefs }: {
   terminal: PtyClient;
   machines: WorkerRegistry;
   workspaces: Workspaces;
-  prefs: UiV1['prefs'];
+  prefs: SurfaceV1['prefs'];
 }) {
   // Session + catalogue state live in the module store so the registered actions
   // (open_shell / close_shell) and this panel share one source of truth.
@@ -406,6 +406,6 @@ function ShellGlyph() {
 
 // The persisted expand/collapse state of the two tree groups, defaulting both
 // open. Read on mount and re-read on every prefs.watch tick.
-function readExpanded(prefs: UiV1['prefs']): Record<GroupId, boolean> {
+function readExpanded(prefs: SurfaceV1['prefs']): Record<GroupId, boolean> {
   return { machines: true, reservations: true, ...prefs.get<Record<GroupId, boolean>>(EXPANDED_KEY) };
 }
