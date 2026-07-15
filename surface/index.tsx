@@ -16,7 +16,7 @@ import './styles.css';
 // CRITICAL: each session's XtermTerminal mounts EXACTLY ONCE and is kept in the
 // DOM (visibility-toggled, never unmounted) across internal tab switches, so a
 // shell survives switching tabs. The host's warm-keep model keeps the WHOLE app
-// mounted across app switches/peeks, so those don't tear the ptys down either.
+// mounted across app switches, so those don't tear the ptys down either.
 
 // The launcher glyph: a shell prompt (chevron + cursor line), drawn in the
 // 0 0 16 16 viewBox apps use, stroked in currentColor.
@@ -36,7 +36,7 @@ export function register(surfaceProvider: SurfaceProvider): void {
   surface.daemon.register({
     mount(ctx) {
       registerActions(ctx);
-      return null;
+      return {};
     },
   });
 
@@ -54,11 +54,11 @@ export function register(surfaceProvider: SurfaceProvider): void {
       const root = createRoot(host.container);
       root.render(
         <TerminalPanel
-          terminal={createPtyClient(host.services.bus)}
-          machines={host.services.workers}
-          workspaces={host.services.workspaces}
-          localSettings={host.services.localSettings}
-          bus={host.services.bus}
+          terminal={createPtyClient(host.bus)}
+          machines={host.workers}
+          workspaces={host.workspaces}
+          localSettings={host.localSettings}
+          bus={host.bus}
         />,
       );
       return { dispose: () => root.unmount() };

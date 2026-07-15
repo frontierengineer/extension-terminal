@@ -134,6 +134,9 @@ export function register(provider: WorkerProvider): void {
       'exit code. Runs ON THE MACHINE next to its files — no app needs to be open — so it can be scheduled to fire ' +
       'unattended (bind the schedule to a reservation to run it in that slot). Provide `command` (the executable, ' +
       'e.g. "git") and optional space-separated `args` (e.g. "status --porcelain") and a working directory `cwd`.',
+    category: 'Terminal',
+    defaultKey: null,
+    group: null,
     realm: 'worker',
     output: null,
     input: {

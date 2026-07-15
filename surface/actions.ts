@@ -8,7 +8,7 @@
 // an agent, the palette, or the scheduler invokes them. The app that renders the
 // terminals is a SEPARATE component in SEPARATE MEMORY — the daemon can't touch the
 // app's React state. So an action does NOT mutate the session store directly; its
-// run() resolves the request against the daemon's SERVICES and writes a COMMAND
+// run() resolves the request against the daemon's context and writes a COMMAND
 // MARKER two ways: it stores the marker in localSettings (for read-at-mount, so a
 // marker set while the app was cold is drained on the next mount) AND pokes a
 // bus.extension event on the same key (for the live case — localSettings is storage,
@@ -162,7 +162,7 @@ async function resolveTarget(
 }
 
 export function registerActions(ctx: DaemonContext): void {
-  const { workers: machines, workspaces } = ctx.services;
+  const { workers: machines, workspaces } = ctx;
 
   // The live target picker (machines + directory-backed reservations), resolved
   // when the open-shell modal opens. Published as an option source so the host
@@ -186,6 +186,9 @@ export function registerActions(ctx: DaemonContext): void {
       'else the first connected machine). Several shells can be open on the same target at once. Returns the new ' +
       'target’s label. This only opens an interactive shell; to run a single command unattended use ' +
       'terminal.run_command.',
+    category: 'Terminal',
+    defaultKey: null,
+    group: null,
     realm: null,
     output: null,
     input: {
@@ -220,8 +223,8 @@ export function registerActions(ctx: DaemonContext): void {
       }
 
       const cmd: OpenCommand = { nonce: nextNonce(), machine: target.machine, cwd: target.cwd, label: target.label };
-      ctx.services.localSettings.set(OPEN_CMD_KEY, cmd);
-      ctx.services.bus.extension.publish(OPEN_CMD_KEY, cmd);
+      ctx.localSettings.set(OPEN_CMD_KEY, cmd);
+      ctx.bus.extension.publish(OPEN_CMD_KEY, cmd);
       return { target: target.label };
     },
   });
@@ -235,6 +238,9 @@ export function registerActions(ctx: DaemonContext): void {
     description:
       'Close an open terminal session, killing its shell. Closes the focused session by default, or pass a ' +
       '`sessionId` (as returned in the app) to close a specific one. No-op if nothing is open.',
+    category: 'Terminal',
+    defaultKey: null,
+    group: null,
     realm: null,
     output: null,
     input: {
@@ -246,8 +252,8 @@ export function registerActions(ctx: DaemonContext): void {
       const args = (input ?? {}) as { sessionId?: string };
       const sessionId = String(args.sessionId ?? '').trim() || undefined;
       const cmd: CloseCommand = { nonce: nextNonce(), sessionId };
-      ctx.services.localSettings.set(CLOSE_CMD_KEY, cmd);
-      ctx.services.bus.extension.publish(CLOSE_CMD_KEY, cmd);
+      ctx.localSettings.set(CLOSE_CMD_KEY, cmd);
+      ctx.bus.extension.publish(CLOSE_CMD_KEY, cmd);
       return { requested: sessionId ?? 'focused' };
     },
   });

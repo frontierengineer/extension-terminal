@@ -20,12 +20,12 @@
 // lockstep. Each session keeps its own XtermTerminal mounted EXACTLY ONCE
 // (visibility-toggled, not unmounted) so its shell survives tab switches; closing
 // a tab unmounts it, which kills its pty. The host warm-keeps the whole app, so
-// switching to another app / peeking it never tears these down.
+// switching to another app never tears these down.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExtensionSidebar, ExtensionTabs, Split, EmptyState } from '@frontierengineer/ui';
 import { ActionButton } from '@frontierengineer/ui/useAction';
-import type { WorkerRegistry, Reservation, SurfaceServices, Workspaces } from '../../../types';
+import type { WorkerRegistry, Reservation, SurfaceComponentContext, Workspaces } from '../../../types';
 import type { PtyClient } from '../ptyClient';
 import { XtermTerminal } from './XtermTerminal';
 import {
@@ -101,8 +101,8 @@ export function TerminalPanel({ terminal, machines, workspaces, localSettings, b
   terminal: PtyClient;
   machines: WorkerRegistry;
   workspaces: Workspaces;
-  localSettings: SurfaceServices['localSettings'];
-  bus: SurfaceServices['bus'];
+  localSettings: SurfaceComponentContext['localSettings'];
+  bus: SurfaceComponentContext['bus'];
 }) {
   // Session + catalogue state live in the module store so the registered actions
   // (open_shell / close_shell) and this panel share one source of truth.
@@ -405,6 +405,6 @@ function ShellGlyph() {
 
 // The persisted expand/collapse state of the two tree groups, defaulting both
 // open. Read from localSettings on mount.
-function readExpanded(localSettings: SurfaceServices['localSettings']): Record<GroupId, boolean> {
+function readExpanded(localSettings: SurfaceComponentContext['localSettings']): Record<GroupId, boolean> {
   return { machines: true, reservations: true, ...localSettings.get<Record<GroupId, boolean>>(EXPANDED_KEY) };
 }
