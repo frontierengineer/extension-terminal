@@ -19,7 +19,7 @@
 // EMPTY argv (no command string, no interpolation) and user keystrokes only
 // ever travel over the pty stream as input bytes.
 
-import type { HostProvider, WorkerChannel } from '../../types';
+import type { HostProvider, HostDaemonHost, WorkerChannel } from '../../types';
 
 const PTY_DATA_FLUSH_BYTES = 64 * 1024; // bound a single publish payload
 
@@ -49,8 +49,18 @@ function genPtyId(): string {
 }
 
 export function register(hostProvider: HostProvider): void {
-  const host = hostProvider.version(1);
-  const { bus, workers, services } = host;
+  const h = hostProvider.version(1);
+  // The host bundle is a single daemon: all logic and capability live inside its
+  // mount(), which receives the flat HostDaemonHost and returns the teardown.
+  h.daemon.register({ mount });
+}
+
+// The terminal host daemon: the bridge that owns the pty.* bus channel this
+// extension's UI calls and routes every request to the extension's worker
+// component over the worker channel. Returns a dispose that unsubscribes the
+// worker watch and kills every live remote pty at unload.
+function mount(host: HostDaemonHost): { dispose?: () => void } {
+  const { bus } = host;
 
   // ptyId → remote routing record; the worker component shares the ptyId.
   const remotePtys = new Map<string, { machine: string }>();
@@ -73,7 +83,7 @@ export function register(hostProvider: HostProvider): void {
   function channelFor(machine: string): WorkerChannel {
     let ch = channels.get(machine);
     if (!ch) {
-      ch = workers.channel(machine);
+      ch = host.channel(machine);
       ch.onMessage((msg: any) => {
         const ptyId = typeof msg?.ptyId === 'string' ? msg.ptyId : '';
         if (!ptyId || !remotePtys.has(ptyId)) return;
@@ -109,7 +119,7 @@ export function register(hostProvider: HostProvider): void {
   // convenience default cwd is never worth a hung terminal.
   async function resolveDefaultCwd(machine: string): Promise<string> {
     try {
-      const reservations = await withTimeout(services.workspaces.reservations(), DEFAULT_CWD_BUDGET_MS);
+      const reservations = await withTimeout(host.workspaces.reservations(), DEFAULT_CWD_BUDGET_MS);
       for (const r of reservations) {
         if (r.machine === machine && r.descriptor.slotDir) return r.descriptor.slotDir;
       }
@@ -190,7 +200,7 @@ export function register(hostProvider: HostProvider): void {
 
   // A machine dropping takes its ptys with it — surface the ended state so
   // the UI's shells render "connection lost" instead of hanging.
-  const workersSub = services.workers.watch((event) => {
+  const workersSub = host.workers.watch((event) => {
     if (event.type !== 'disconnected' || !event.machine) return;
     for (const [ptyId, rec] of Array.from(remotePtys.entries())) {
       if (rec.machine !== event.machine) continue;
@@ -199,11 +209,13 @@ export function register(hostProvider: HostProvider): void {
     }
   });
 
-  host.deregister({ teardown: () => {
+  // The daemon's only teardown: drop the worker watch and kill every live remote
+  // pty when the extension unloads.
+  return { dispose: () => {
     workersSub.unsubscribe();
     for (const [ptyId, rec] of Array.from(remotePtys.entries())) {
       sendRemote(ptyId, rec.machine, { type: 'kill', ptyId });
       remotePtys.delete(ptyId);
     }
-  } });
+  } };
 }

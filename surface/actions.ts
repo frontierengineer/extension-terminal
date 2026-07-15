@@ -1,5 +1,5 @@
 // The terminal app's DAEMON actions — the operations a user or agent can DO,
-// declared once (DaemonContext.actions.register) so each gets the three invokers
+// declared once (DaemonHost.actions.register) so each gets the three invokers
 // the host derives for free: a generated human modal, an agent tool
 // (frontier.run_action), and a scheduler entry.
 //
@@ -29,7 +29,7 @@
 // The worker-realm `terminal.run_command` lives in worker/index.ts, not here —
 // its run() must execute next to the machine's files.
 
-import type { WorkerRegistry, Reservation, DaemonContext, Workspaces } from '../../types';
+import type { WorkerRegistry, Reservation, DaemonHost, Workspaces } from '../../types';
 
 // localSettings keys the action writes and the panel drains, doubling as the
 // bus.extension event topics the action pokes for the live case. OPEN carries the
@@ -161,7 +161,7 @@ async function resolveTarget(
   return null;
 }
 
-export function registerActions(ctx: DaemonContext): void {
+export function registerActions(ctx: DaemonHost): void {
   const { workers: machines, workspaces } = ctx;
 
   // The live target picker (machines + directory-backed reservations), resolved
@@ -189,7 +189,6 @@ export function registerActions(ctx: DaemonContext): void {
     category: 'Terminal',
     defaultKey: null,
     group: null,
-    realm: null,
     output: null,
     input: {
       fields: [
@@ -241,7 +240,6 @@ export function registerActions(ctx: DaemonContext): void {
     category: 'Terminal',
     defaultKey: null,
     group: null,
-    realm: null,
     output: null,
     input: {
       fields: [

@@ -19,7 +19,7 @@
 // user keystrokes only ever arrive as pty input bytes.
 
 import * as os from 'os';
-import type { WorkerProvider } from '../../types';
+import type { WorkerProvider, WorkerDaemonHost } from '../../types';
 
 const PTY_MAX = 32;
 const PTY_DATA_FLUSH_BYTES = 64 * 1024; // bound a single channel payload
@@ -41,8 +41,18 @@ function clampCols(v: any): number { return Math.max(2, Math.min(500, parseInt(v
 function clampRows(v: any): number { return Math.max(2, Math.min(200, parseInt(v, 10) || 24)); }
 
 export function register(provider: WorkerProvider): void {
-  const worker = provider.version(1);
-  const { channel, services } = worker;
+  const w = provider.version(1);
+  // The worker bundle is a single daemon: all logic and capability live inside
+  // its mount(), which receives the flat WorkerDaemonHost.
+  w.daemon.register({ mount });
+}
+
+// The terminal worker daemon: runs node-pty next to the machine's files, driven
+// over the worker channel, and registers the run_command action whose closure
+// executes on this machine. Nothing to tear down beyond the daemon itself, so
+// mount returns an empty handle.
+function mount(host: WorkerDaemonHost): { dispose?: () => void } {
+  const { channel } = host;
 
   const ptys = new Map<string, { pty: Pty }>();
 
@@ -54,7 +64,7 @@ export function register(provider: WorkerProvider): void {
     if (nodePtyFetchPromise) return nodePtyFetchPromise;
 
     nodePtyFetchPromise = (async () => {
-      const mod: any = await services.importWorker('node-pty');
+      const mod: any = await host.importWorker('node-pty');
       nodePty = (mod && mod.default ? mod.default : mod) as NodePtyModule;
       console.log('[terminal-worker] node-pty: loaded from worker node_modules');
       return nodePty;
@@ -117,16 +127,16 @@ export function register(provider: WorkerProvider): void {
   }
 
   // ── Worker-realm action: run a command on THIS machine ────────────────
-  // The first worker-realm action (types.ts ActionRealm 'worker'): its run()
-  // executes ON THE DAEMON, so it fires with NOTHING ATTENDING — schedule it
-  // bound to a reservation and the host dispatches it to this worker on cron, no
-  // browser open. It runs a command next to the machine's files and returns the
-  // output, the canonical "headless backend work" an action should do off the
-  // host. Injection-safe: execFile takes a command + an args ARRAY (no shell
-  // string), exactly like the pty's empty-argv spawn. The closure lives here, in
-  // the worker bundle — never in the UI controller — which is what makes it a
-  // worker-realm action.
-  worker.actions.register({
+  // A worker-realm action: its run() executes ON THE DAEMON, so it fires with
+  // NOTHING ATTENDING — schedule it bound to a reservation and the host
+  // dispatches it to this worker on cron, no browser open. It runs a command next
+  // to the machine's files and returns the output, the canonical "headless
+  // backend work" an action should do off the host. Injection-safe: execFile
+  // takes a command + an args ARRAY (no shell string), exactly like the pty's
+  // empty-argv spawn. The closure lives here, in the worker bundle — never in the
+  // UI controller — and an action's realm is simply the bundle that holds its
+  // closure, so registering it here is what makes it a worker-realm action.
+  host.actions.register({
     id: 'terminal.run_command',
     title: 'Run a command on the machine',
     description:
@@ -137,7 +147,6 @@ export function register(provider: WorkerProvider): void {
     category: 'Terminal',
     defaultKey: null,
     group: null,
-    realm: 'worker',
     output: null,
     input: {
       fields: [
@@ -153,7 +162,7 @@ export function register(provider: WorkerProvider): void {
       const argv = String(args.args ?? '').trim() ? String(args.args).trim().split(/\s+/) : [];
       const cwd = String(args.cwd ?? '').trim() || os.homedir();
       // execFile (NOT exec): no shell, command + args array — injection-safe.
-      const { execFile } = services.requireWorker('child_process') as typeof import('child_process');
+      const { execFile } = host.requireWorker('child_process') as typeof import('child_process');
       return await new Promise((resolve) => {
         execFile(command, argv, { cwd, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 }, (err: any, stdout: string, stderr: string) => {
           resolve({
@@ -199,4 +208,6 @@ export function register(provider: WorkerProvider): void {
       // onExit cleans up the map.
     }
   });
+
+  return {};
 }
