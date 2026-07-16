@@ -19,7 +19,7 @@
 // EMPTY argv (no command string, no interpolation) and user keystrokes only
 // ever travel over the pty stream as input bytes.
 
-import type { HostProvider, HostDaemonHost, WorkerChannel } from '../../types';
+import type { HostProvider, HostDaemonContext, WorkerChannel } from '../../types';
 
 const PTY_DATA_FLUSH_BYTES = 64 * 1024; // bound a single publish payload
 
@@ -51,7 +51,7 @@ function genPtyId(): string {
 export function register(hostProvider: HostProvider): void {
   const h = hostProvider.version(1);
   // The host bundle is a single daemon: all logic and capability live inside its
-  // mount(), which receives the flat HostDaemonHost and returns the teardown.
+  // mount(), which receives the flat HostDaemonContext and returns the teardown.
   h.daemon.register({ mount });
 }
 
@@ -59,8 +59,8 @@ export function register(hostProvider: HostProvider): void {
 // extension's UI calls and routes every request to the extension's worker
 // component over the worker channel. Returns a dispose that unsubscribes the
 // worker watch and kills every live remote pty at unload.
-function mount(host: HostDaemonHost): { dispose?: () => void } {
-  const { bus } = host;
+function mount(context: HostDaemonContext): { dispose?: () => void } {
+  const { bus } = context;
 
   // ptyId → remote routing record; the worker component shares the ptyId.
   const remotePtys = new Map<string, { machine: string }>();
@@ -83,7 +83,7 @@ function mount(host: HostDaemonHost): { dispose?: () => void } {
   function channelFor(machine: string): WorkerChannel {
     let ch = channels.get(machine);
     if (!ch) {
-      ch = host.channel(machine);
+      ch = context.channel(machine);
       ch.onMessage((msg: any) => {
         const ptyId = typeof msg?.ptyId === 'string' ? msg.ptyId : '';
         if (!ptyId || !remotePtys.has(ptyId)) return;
@@ -119,7 +119,7 @@ function mount(host: HostDaemonHost): { dispose?: () => void } {
   // convenience default cwd is never worth a hung terminal.
   async function resolveDefaultCwd(machine: string): Promise<string> {
     try {
-      const reservations = await withTimeout(host.workspaces.reservations(), DEFAULT_CWD_BUDGET_MS);
+      const reservations = await withTimeout(context.workspaces.reservations(), DEFAULT_CWD_BUDGET_MS);
       for (const r of reservations) {
         if (r.machine === machine && r.descriptor.slotDir) return r.descriptor.slotDir;
       }
@@ -200,7 +200,7 @@ function mount(host: HostDaemonHost): { dispose?: () => void } {
 
   // A machine dropping takes its ptys with it — surface the ended state so
   // the UI's shells render "connection lost" instead of hanging.
-  const workersSub = host.workers.watch((event) => {
+  const workersSub = context.workers.watch((event) => {
     if (event.type !== 'disconnected' || !event.machine) return;
     for (const [ptyId, rec] of Array.from(remotePtys.entries())) {
       if (rec.machine !== event.machine) continue;

@@ -68,7 +68,7 @@ component**, and bridge them:
   core/workers/. node-pty lives only on the worker; the host vendors none.
 
 `node-pty` is a native module: installed locally by the daemon on first boot (or
-baked into the k8s worker image), resolved via `services.importWorker('node-pty')`.
+baked into the k8s worker image), resolved via the daemon context's `modules.import('node-pty')` (daemon-located resolution).
 When it can't be resolved, a spawn surfaces a clean "terminal unavailable on this
 worker" rather than breaking the daemon.
 

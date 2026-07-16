@@ -1,5 +1,5 @@
 // The terminal app's DAEMON actions — the operations a user or agent can DO,
-// declared once (DaemonHost.actions.register) so each gets the three invokers
+// declared once (SurfaceDaemonContext.actions.register) so each gets the three invokers
 // the host derives for free: a generated human modal, an agent tool
 // (frontier.run_action), and a scheduler entry.
 //
@@ -29,7 +29,7 @@
 // The worker-realm `terminal.run_command` lives in worker/index.ts, not here —
 // its run() must execute next to the machine's files.
 
-import type { WorkerRegistry, Reservation, DaemonHost, Workspaces } from '../../types';
+import type { WorkerRegistry, Reservation, SurfaceDaemonContext, Workspaces } from '../../types';
 
 // localSettings keys the action writes and the panel drains, doubling as the
 // bus.extension event topics the action pokes for the live case. OPEN carries the
@@ -161,13 +161,13 @@ async function resolveTarget(
   return null;
 }
 
-export function registerActions(ctx: DaemonHost): void {
-  const { workers: machines, workspaces } = ctx;
+export function registerActions(context: SurfaceDaemonContext): void {
+  const { workers: machines, workspaces } = context;
 
   // The live target picker (machines + directory-backed reservations), resolved
   // when the open-shell modal opens. Published as an option source so the host
   // renders a real dropdown and an agent still passes a plain string id.
-  ctx.optionSources.register({
+  context.optionSources.register({
     id: TARGET_SOURCE_ID,
     title: 'Terminal target',
     list: () => listTargetOptions(machines, workspaces),
@@ -176,7 +176,7 @@ export function registerActions(ctx: DaemonHost): void {
   // Open a new shell on a target. The canonical "drop into a shell" op — the tab
   // strip's "+", the empty-stage button, an agent, and the scheduler all run THIS;
   // the tree rows are a one-click shortcut for it pre-aimed at a row's target.
-  ctx.actions.register({
+  context.actions.register({
     id: 'terminal.open_shell',
     title: 'Open a shell',
     description:
@@ -222,8 +222,8 @@ export function registerActions(ctx: DaemonHost): void {
       }
 
       const cmd: OpenCommand = { nonce: nextNonce(), machine: target.machine, cwd: target.cwd, label: target.label };
-      ctx.localSettings.set(OPEN_CMD_KEY, cmd);
-      ctx.bus.extension.publish(OPEN_CMD_KEY, cmd);
+      context.localSettings.set(OPEN_CMD_KEY, cmd);
+      context.bus.extension.publish(OPEN_CMD_KEY, cmd);
       return { target: target.label };
     },
   });
@@ -231,7 +231,7 @@ export function registerActions(ctx: DaemonHost): void {
   // Close a shell — the focused one by default, or one named by session id. Gives
   // the agent/scheduler a way to tidy up shells. (The tab × and the recovery
   // overlays close locally; this is the described, agent-callable op.)
-  ctx.actions.register({
+  context.actions.register({
     id: 'terminal.close_shell',
     title: 'Close a shell',
     description:
@@ -250,8 +250,8 @@ export function registerActions(ctx: DaemonHost): void {
       const args = (input ?? {}) as { sessionId?: string };
       const sessionId = String(args.sessionId ?? '').trim() || undefined;
       const cmd: CloseCommand = { nonce: nextNonce(), sessionId };
-      ctx.localSettings.set(CLOSE_CMD_KEY, cmd);
-      ctx.bus.extension.publish(CLOSE_CMD_KEY, cmd);
+      context.localSettings.set(CLOSE_CMD_KEY, cmd);
+      context.bus.extension.publish(CLOSE_CMD_KEY, cmd);
       return { requested: sessionId ?? 'focused' };
     },
   });

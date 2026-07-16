@@ -9,7 +9,8 @@
 //   out:  { type: 'data', ptyId, data }
 //         { type: 'exit', ptyId, exitCode, signal, error? }
 //
-// node-pty is a NATIVE module, resolved via importWorker('node-pty') — it is
+// node-pty is a NATIVE module, resolved via context.modules.import('node-pty')
+// (daemon-located resolution) — it is
 // installed on the worker (the in-cluster k8s pod has it baked into
 // /server/node_modules via `npm install`). When it can't be resolved the spawn
 // surfaces a clean "terminal unavailable on this worker" instead of breaking
@@ -19,7 +20,7 @@
 // user keystrokes only ever arrive as pty input bytes.
 
 import * as os from 'os';
-import type { WorkerProvider, WorkerDaemonHost } from '../../types';
+import type { WorkerProvider, WorkerDaemonContext } from '../../types';
 
 const PTY_MAX = 32;
 const PTY_DATA_FLUSH_BYTES = 64 * 1024; // bound a single channel payload
@@ -43,7 +44,7 @@ function clampRows(v: any): number { return Math.max(2, Math.min(200, parseInt(v
 export function register(provider: WorkerProvider): void {
   const w = provider.version(1);
   // The worker bundle is a single daemon: all logic and capability live inside
-  // its mount(), which receives the flat WorkerDaemonHost.
+  // its mount(), which receives the flat WorkerDaemonContext.
   w.daemon.register({ mount });
 }
 
@@ -51,8 +52,8 @@ export function register(provider: WorkerProvider): void {
 // over the worker channel, and registers the run_command action whose closure
 // executes on this machine. Nothing to tear down beyond the daemon itself, so
 // mount returns an empty handle.
-function mount(host: WorkerDaemonHost): { dispose?: () => void } {
-  const { channel } = host;
+function mount(context: WorkerDaemonContext): { dispose?: () => void } {
+  const { channel } = context;
 
   const ptys = new Map<string, { pty: Pty }>();
 
@@ -64,7 +65,7 @@ function mount(host: WorkerDaemonHost): { dispose?: () => void } {
     if (nodePtyFetchPromise) return nodePtyFetchPromise;
 
     nodePtyFetchPromise = (async () => {
-      const mod: any = await host.importWorker('node-pty');
+      const mod: any = await context.modules.import('node-pty');
       nodePty = (mod && mod.default ? mod.default : mod) as NodePtyModule;
       console.log('[terminal-worker] node-pty: loaded from worker node_modules');
       return nodePty;
@@ -136,7 +137,7 @@ function mount(host: WorkerDaemonHost): { dispose?: () => void } {
   // empty-argv spawn. The closure lives here, in the worker bundle — never in the
   // UI controller — and an action's realm is simply the bundle that holds its
   // closure, so registering it here is what makes it a worker-realm action.
-  host.actions.register({
+  context.actions.register({
     id: 'terminal.run_command',
     title: 'Run a command on the machine',
     description:
@@ -162,7 +163,7 @@ function mount(host: WorkerDaemonHost): { dispose?: () => void } {
       const argv = String(args.args ?? '').trim() ? String(args.args).trim().split(/\s+/) : [];
       const cwd = String(args.cwd ?? '').trim() || os.homedir();
       // execFile (NOT exec): no shell, command + args array — injection-safe.
-      const { execFile } = host.requireWorker('child_process') as typeof import('child_process');
+      const { execFile } = context.modules.require('child_process') as typeof import('child_process');
       return await new Promise((resolve) => {
         execFile(command, argv, { cwd, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 }, (err: any, stdout: string, stderr: string) => {
           resolve({

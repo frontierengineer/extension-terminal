@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import type { SurfaceProvider, ViewHost } from '../../types';
+import type { SurfaceProvider, SurfaceViewContext } from '../../types';
 import { TerminalPanel } from './components/TerminalPanel';
 import { createPtyClient } from './ptyClient';
 import { registerActions } from './actions';
@@ -34,8 +34,8 @@ export function register(surfaceProvider: SurfaceProvider): void {
   // (frontier.run_action), or the scheduler. The worker-realm terminal.run_command
   // lives in worker/index.ts.
   surface.daemon.register({
-    mount(ctx) {
-      registerActions(ctx);
+    mount(context) {
+      registerActions(context);
       return {};
     },
   });
@@ -46,19 +46,19 @@ export function register(surfaceProvider: SurfaceProvider): void {
     icon: TERMINAL_ICON,
     color: '#22d3ee',
     requires: null,
-    // The app owns host.container entirely. mount() runs ONCE (the host warms
+    // The app owns context.container entirely. mount() runs ONCE (the host warms
     // this app's webview once, then only toggles visibility); the returned
     // dispose() runs if the user quits Terminal from the launcher — which
     // unmounts every open shell's pty along with it.
-    mount(host: ViewHost) {
-      const root = createRoot(host.container);
+    mount(context: SurfaceViewContext) {
+      const root = createRoot(context.container);
       root.render(
         <TerminalPanel
-          terminal={createPtyClient(host.bus)}
-          machines={host.workers}
-          workspaces={host.workspaces}
-          localSettings={host.localSettings}
-          bus={host.bus}
+          terminal={createPtyClient(context.bus)}
+          machines={context.workers}
+          workspaces={context.workspaces}
+          localSettings={context.localSettings}
+          bus={context.bus}
         />,
       );
       return { dispose: () => root.unmount() };
