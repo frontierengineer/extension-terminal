@@ -19,7 +19,7 @@
 // EMPTY argv (no command string, no interpolation) and user keystrokes only
 // ever travel over the pty stream as input bytes.
 
-import type { HostProvider, HostDaemonContext, WorkerChannel } from '../../types';
+import type { HostProvider, HostDaemonContext, HostWorkerBus } from '../../types';
 
 const PTY_DATA_FLUSH_BYTES = 64 * 1024; // bound a single publish payload
 
@@ -65,7 +65,7 @@ function mount(context: HostDaemonContext): { dispose?: () => void } {
   // ptyId → remote routing record; the worker component shares the ptyId.
   const remotePtys = new Map<string, { machine: string }>();
   // One channel (with one wired onMessage) per machine, created on first use.
-  const channels = new Map<string, WorkerChannel>();
+  const channels = new Map<string, HostWorkerBus>();
 
   function publishData(ptyId: string, data: string): void {
     let s = data;
@@ -80,7 +80,7 @@ function mount(context: HostDaemonContext): { dispose?: () => void } {
     bus.extension.publish('pty.exit', { ptyId, exitCode, signal: signal || 0, error });
   }
 
-  function channelFor(machine: string): WorkerChannel {
+  function channelFor(machine: string): HostWorkerBus {
     let ch = channels.get(machine);
     if (!ch) {
       ch = context.channel(machine);

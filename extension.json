@@ -5,6 +5,6 @@
   "realms": {
     "surface": { "applications": ["terminal"], "sidebars": [], "daemon": true },
     "host": { "mcpTools": [], "voice": false },
-    "worker": { "runtime": false, "workspaceProviders": [], "components": true }
+    "worker": { "runtime": false, "workspaces": [], "components": true }
   }
 }
