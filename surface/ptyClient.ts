@@ -11,7 +11,7 @@ export interface PtyExit {
 }
 
 export interface PtyClient {
-  spawn(machine: string, opts: { cwd?: string; cols: number; rows: number }): Promise<{ ptyId?: string; error?: string }>;
+  spawn(machine: string, opts: { reservationId?: string | null; cwd?: string; cols: number; rows: number }): Promise<{ ptyId?: string; error?: string }>;
   input(ptyId: string, data: string): Promise<void>;
   resize(ptyId: string, cols: number, rows: number): Promise<void>;
   kill(ptyId: string): Promise<void>;

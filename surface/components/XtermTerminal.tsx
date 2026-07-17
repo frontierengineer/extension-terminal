@@ -41,6 +41,9 @@ interface Props {
   // Every machine — including the host's own worker-zero ("Server") — forwards
   // to that worker's daemon over the worker channel.
   machine: string;
+  // The reservation whose slot this shell opens in, or null/absent for a
+  // machine-home shell (routes the pty by reservation when set).
+  reservationId?: string | null;
   // Directory the shell starts in (a reservation's slot dir); omitted, the
   // host resolves the machine user's default.
   cwd?: string;
@@ -75,7 +78,7 @@ function isUnavailable(msg: string): boolean {
   return /terminal unavailable on this worker/i.test(msg);
 }
 
-export function XtermTerminal({ terminal, machine, cwd, active, focusNonce, onClose, onNewSession }: Props) {
+export function XtermTerminal({ terminal, machine, reservationId, cwd, active, focusNonce, onClose, onNewSession }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Xterm | null>(null);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
@@ -126,7 +129,7 @@ export function XtermTerminal({ terminal, machine, cwd, active, focusNonce, onCl
     };
 
     const spawn = (cols: number, rows: number) => {
-      terminal.spawn(machine, { cwd, cols, rows })
+      terminal.spawn(machine, { reservationId, cwd, cols, rows })
         .then((res) => {
           if (!alive) {
             // Component unmounted mid-spawn — kill the orphan immediately.
@@ -200,7 +203,7 @@ export function XtermTerminal({ terminal, machine, cwd, active, focusNonce, onCl
       try { term.dispose(); } catch { /* ignore */ }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [terminal, machine, cwd, restartKey]);
+  }, [terminal, machine, reservationId, cwd, restartKey]);
 
   // Return keyboard focus to the shell when this tab becomes the active one (the
   // parent bumps focusNonce on tab switch / fresh open). Guarded on `active` so a

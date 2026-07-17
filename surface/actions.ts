@@ -117,7 +117,7 @@ async function listTargetOptions(
   let reservations: Reservation[] = [];
   try { reservations = await withTimeout(workspaces.reservations({}), RESERVATIONS_BUDGET_MS); } catch { /* offer machines only */ }
   for (const r of reservations) {
-    const cwd = r.slot.slotDirectory || r.slot.canonicalDirectory;
+    const cwd = r.slot.slotDirectory;
     if (!cwd) continue;
     const m = machineById.get(r.machine);
     if (!m?.connected) continue;
@@ -154,7 +154,7 @@ async function resolveTarget(
     try { reservations = await withTimeout(workspaces.reservations({}), RESERVATIONS_BUDGET_MS); } catch { return null; }
     const r = reservations.find((x) => x.id === id);
     if (!r) return null;
-    const cwd = r.slot.slotDirectory || r.slot.canonicalDirectory;
+    const cwd = r.slot.slotDirectory;
     const m = machines.get(r.machine);
     return cwd && m?.connected ? { machine: r.machine, cwd, label: r.key } : null;
   }

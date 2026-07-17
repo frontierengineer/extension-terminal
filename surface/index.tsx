@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import type { SurfaceProvider, SurfaceViewContext } from '../../types';
+import type { SurfaceProvider, SurfaceApplicationContext } from '../../types';
 import { TerminalPanel } from './components/TerminalPanel';
 import { createPtyClient } from './ptyClient';
 import { registerActions } from './actions';
@@ -50,7 +50,7 @@ export function register(surfaceProvider: SurfaceProvider): void {
     // this app's webview once, then only toggles visibility); the returned
     // dispose() runs if the user quits Terminal from the launcher — which
     // unmounts every open shell's pty along with it.
-    mount(context: SurfaceViewContext) {
+    mount(context: SurfaceApplicationContext) {
       const root = createRoot(context.container);
       root.render(
         <TerminalPanel

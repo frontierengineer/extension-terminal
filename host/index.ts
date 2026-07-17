@@ -2,7 +2,7 @@
 // calls and routes every request to this extension's worker component (which
 // runs node-pty on the daemon), served back to the UI over the same channel.
 //
-//   request  pty.spawn  { machine, cwd?, cols, rows } → { ptyId } | { error }
+//   request  pty.spawn  { machine, reservationId?, cwd?, cols, rows } → { ptyId } | { error }
 //   request  pty.input  { ptyId, data }               → { ok }
 //   request  pty.resize { ptyId, cols, rows }         → { ok }
 //   request  pty.kill   { ptyId }                     → { ok }
@@ -10,16 +10,17 @@
 //   publish  pty.exit   { ptyId, exitCode, signal, error? }
 //
 // Every machine — including the host's own worker-zero daemon ("Server"), which
-// is now a real connected machine like any other — rides the worker channel to
-// worker/index.ts. The host process no longer spawns any pty itself: there is
-// no in-process / pseudo-machine path. The channel protocol is ours
+// is a real connected machine like any other — rides the platform channel to
+// worker/index.ts. A slot shell addresses its reservation (the platform
+// resolves the machine); a home shell addresses the machine directly. The host
+// process never spawns a pty itself. The channel protocol is ours
 // (spawn/input/resize/kill out, data/exit back, correlated by ptyId).
 //
 // Spawns are injection-safe by construction: the shell is spawned with an
 // EMPTY argv (no command string, no interpolation) and user keystrokes only
 // ever travel over the pty stream as input bytes.
 
-import type { HostProvider, HostDaemonContext, HostWorkerBus } from '../../types';
+import type { HostProvider, HostDaemonContext, ChannelTarget } from '../../types';
 
 const PTY_DATA_FLUSH_BYTES = 64 * 1024; // bound a single publish payload
 
@@ -62,10 +63,10 @@ export function register(hostProvider: HostProvider): void {
 function mount(context: HostDaemonContext): { dispose?: () => void } {
   const { bus } = context;
 
-  // ptyId → remote routing record; the worker component shares the ptyId.
-  const remotePtys = new Map<string, { machine: string }>();
-  // One channel (with one wired onMessage) per machine, created on first use.
-  const channels = new Map<string, HostWorkerBus>();
+  // ptyId → routing record: the channel target the pty's traffic addresses
+  // (its reservation when it is a slot shell, else its machine) plus the
+  // machine for the disconnect sweep. The worker component shares the ptyId.
+  const remotePtys = new Map<string, { target: ChannelTarget; machine: string }>();
 
   function publishData(ptyId: string, data: string): void {
     let s = data;
@@ -80,29 +81,24 @@ function mount(context: HostDaemonContext): { dispose?: () => void } {
     bus.extension.publish('pty.exit', { ptyId, exitCode, signal: signal || 0, error });
   }
 
-  function channelFor(machine: string): HostWorkerBus {
-    let ch = channels.get(machine);
-    if (!ch) {
-      ch = context.channel(machine);
-      ch.onMessage((msg: any) => {
-        const ptyId = typeof msg?.ptyId === 'string' ? msg.ptyId : '';
-        if (!ptyId || !remotePtys.has(ptyId)) return;
-        if (msg.type === 'data') {
-          publishData(ptyId, typeof msg.data === 'string' ? msg.data : '');
-        } else if (msg.type === 'exit') {
-          remotePtys.delete(ptyId);
-          publishExit(
-            ptyId,
-            typeof msg.exitCode === 'number' ? msg.exitCode : -1,
-            typeof msg.signal === 'number' ? msg.signal : undefined,
-            typeof msg.error === 'string' ? msg.error : undefined,
-          );
-        }
-      });
-      channels.set(machine, ch);
+  // One channel subscription serves every machine: the worker component's
+  // data/exit messages arrive here regardless of which daemon sent them, and
+  // the ptyId routes them to their shell.
+  const channelSub = context.channel.onMessage((msg: any) => {
+    const ptyId = typeof msg?.ptyId === 'string' ? msg.ptyId : '';
+    if (!ptyId || !remotePtys.has(ptyId)) return;
+    if (msg.type === 'data') {
+      publishData(ptyId, typeof msg.data === 'string' ? msg.data : '');
+    } else if (msg.type === 'exit') {
+      remotePtys.delete(ptyId);
+      publishExit(
+        ptyId,
+        typeof msg.exitCode === 'number' ? msg.exitCode : -1,
+        typeof msg.signal === 'number' ? msg.signal : undefined,
+        typeof msg.error === 'string' ? msg.error : undefined,
+      );
     }
-    return ch;
-  }
+  });
 
   // Default cwd when the caller gives none: the machine opens in its first live
   // slot's directory, else '' so the worker component falls back to the
@@ -128,11 +124,13 @@ function mount(context: HostDaemonContext): { dispose?: () => void } {
   }
 
   // ── Remote (worker-component) pty ─────────────────────────────────────
-  function spawnRemote(ptyId: string, machine: string, cwd: string, cols: number, rows: number): { error?: string } {
-    const ch = channelFor(machine);
-    remotePtys.set(ptyId, { machine });
+  // Spawn rides request() so an unroutable target (released reservation,
+  // disconnected machine) surfaces as a spawn error instead of a shell that
+  // never answers; the worker's responder acknowledges the spawn it started.
+  async function spawnRemote(ptyId: string, target: ChannelTarget, machine: string, cwd: string, cols: number, rows: number): Promise<{ error?: string }> {
+    remotePtys.set(ptyId, { target, machine });
     try {
-      ch.send({ type: 'spawn', ptyId, cwd, cols, rows });
+      await context.channel.request(target, { type: 'spawn', ptyId, cwd, cols, rows });
     } catch (err: any) {
       remotePtys.delete(ptyId);
       return { error: err?.message || String(err) };
@@ -140,21 +138,22 @@ function mount(context: HostDaemonContext): { dispose?: () => void } {
     return {};
   }
 
-  function sendRemote(ptyId: string, machine: string, msg: any): void {
-    try { channelFor(machine).send(msg); }
-    catch (err: any) { console.error(`[terminal] ${msg?.type} ${ptyId}: ${err?.message || err}`); }
+  function sendRemote(ptyId: string, target: ChannelTarget, msg: any): void {
+    context.channel.send(target, msg);
   }
 
   // ── Bus responders (this extension's UI) ──────────────────────────────
-  bus.extension.respond('pty.spawn', async (params: { machine?: string; cwd?: string; cols?: number; rows?: number }) => {
+  bus.extension.respond('pty.spawn', async (params: { machine?: string; reservationId?: string | null; cwd?: string; cols?: number; rows?: number }) => {
     const machine = typeof params?.machine === 'string' ? params.machine : '';
     if (!machine) return { error: 'pty.spawn: machine required' };
+    const reservationId = typeof params?.reservationId === 'string' && params.reservationId ? params.reservationId : null;
+    const target: ChannelTarget = reservationId ? { reservationId } : { machine };
     const cols = clampCols(params?.cols);
     const rows = clampRows(params?.rows);
     let cwd = typeof params?.cwd === 'string' ? params.cwd : '';
-    if (!cwd) cwd = await resolveDefaultCwd(machine);
+    if (!cwd && !reservationId) cwd = await resolveDefaultCwd(machine);
     const ptyId = genPtyId();
-    const res = spawnRemote(ptyId, machine, cwd, cols, rows);
+    const res = await spawnRemote(ptyId, target, machine, cwd, cols, rows);
     if (res.error) return { error: res.error };
     return { ptyId };
   });
@@ -165,7 +164,7 @@ function mount(context: HostDaemonContext): { dispose?: () => void } {
     if (!ptyId) return { ok: false, error: 'pty.input: ptyId required' };
     const remote = remotePtys.get(ptyId);
     if (remote) {
-      sendRemote(ptyId, remote.machine, { type: 'input', ptyId, data });
+      sendRemote(ptyId, remote.target, { type: 'input', ptyId, data });
       return { ok: true };
     }
     return { ok: false, error: 'unknown ptyId' };
@@ -178,7 +177,7 @@ function mount(context: HostDaemonContext): { dispose?: () => void } {
     const rows = clampRows(params?.rows);
     const remote = remotePtys.get(ptyId);
     if (remote) {
-      sendRemote(ptyId, remote.machine, { type: 'resize', ptyId, cols, rows });
+      sendRemote(ptyId, remote.target, { type: 'resize', ptyId, cols, rows });
       return { ok: true };
     }
     return { ok: false, error: 'unknown ptyId' };
@@ -189,7 +188,7 @@ function mount(context: HostDaemonContext): { dispose?: () => void } {
     if (!ptyId) return { ok: false, error: 'pty.kill: ptyId required' };
     const remote = remotePtys.get(ptyId);
     if (remote) {
-      sendRemote(ptyId, remote.machine, { type: 'kill', ptyId });
+      sendRemote(ptyId, remote.target, { type: 'kill', ptyId });
       // Keep the record: the component's exit event cleans it up (and
       // publishes pty.exit). If the machine drops before answering, the
       // disconnect sweep below synthesizes the exit.
@@ -213,8 +212,9 @@ function mount(context: HostDaemonContext): { dispose?: () => void } {
   // pty when the extension unloads.
   return { dispose: () => {
     workersSub.unsubscribe();
+    channelSub.unsubscribe();
     for (const [ptyId, rec] of Array.from(remotePtys.entries())) {
-      sendRemote(ptyId, rec.machine, { type: 'kill', ptyId });
+      sendRemote(ptyId, rec.target, { type: 'kill', ptyId });
       remotePtys.delete(ptyId);
     }
   } };

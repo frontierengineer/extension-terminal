@@ -2,12 +2,14 @@
 // this extension's server code over the worker channel. The channel protocol
 // is ours (correlated by ptyId):
 //
-//   in:   { type: 'spawn', ptyId, cwd, cols, rows }
-//         { type: 'input', ptyId, data }
-//         { type: 'resize', ptyId, cols, rows }
-//         { type: 'kill', ptyId }
-//   out:  { type: 'data', ptyId, data }
-//         { type: 'exit', ptyId, exitCode, signal, error? }
+//   request in:  { type: 'spawn', ptyId, cwd, cols, rows } → { ok } (the ack;
+//                failures still arrive as exit events, matching every other
+//                way a shell dies)
+//   send in:     { type: 'input', ptyId, data }
+//                { type: 'resize', ptyId, cols, rows }
+//                { type: 'kill', ptyId }
+//   send out:    { type: 'data', ptyId, data }
+//                { type: 'exit', ptyId, exitCode, signal, error? }
 //
 // node-pty is a NATIVE module, resolved via context.modules.import('node-pty')
 // (daemon-located resolution) — it is
@@ -180,18 +182,24 @@ function mount(context: WorkerDaemonContext): { dispose?: () => void } {
     },
   });
 
+  // Spawns arrive as requests so the caller learns the daemon heard it (an
+  // unroutable target rejects on the calling side before this runs); every
+  // later failure still arrives as an exit event.
+  channel.onRequest((msg: any) => {
+    const ptyId = typeof msg?.ptyId === 'string' ? msg.ptyId : '';
+    if (!ptyId || msg.type !== 'spawn') return { ok: false, error: 'unknown request' };
+    void spawn(
+      ptyId,
+      typeof msg.cwd === 'string' ? msg.cwd : '',
+      clampCols(msg.cols),
+      clampRows(msg.rows),
+    );
+    return { ok: true };
+  });
+
   channel.onMessage((msg: any) => {
     const ptyId = typeof msg?.ptyId === 'string' ? msg.ptyId : '';
     if (!ptyId) return;
-    if (msg.type === 'spawn') {
-      void spawn(
-        ptyId,
-        typeof msg.cwd === 'string' ? msg.cwd : '',
-        clampCols(msg.cols),
-        clampRows(msg.rows),
-      );
-      return;
-    }
     const entry = ptys.get(ptyId);
     if (!entry) {
       // The server side already retired this ptyId (kill races exit) — a

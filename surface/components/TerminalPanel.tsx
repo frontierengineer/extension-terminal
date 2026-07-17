@@ -71,7 +71,7 @@ function listReservationRows(reservations: Reservation[], machineRows: TargetMac
   const machineById = new Map(machineRows.map((m) => [m.id, m]));
   const out: TargetReservation[] = [];
   for (const r of reservations) {
-    const cwd = r.slot.slotDirectory || r.slot.canonicalDirectory;
+    const cwd = r.slot.slotDirectory;
     if (!cwd) continue;
     const m = machineById.get(r.machine);
     out.push({
@@ -283,7 +283,7 @@ export function TerminalPanel({ terminal, machines, workspaces, localSettings, b
                     key={row.reservationId}
                     className="ext-terminal-selector-item"
                     disabled={!row.connected}
-                    onClick={() => openOn({ machine: row.machine, cwd: row.cwd, label: row.name })}
+                    onClick={() => openOn({ machine: row.machine, reservationId: row.reservationId, cwd: row.cwd, label: row.name })}
                     data-help-title={`Open a shell in ${row.name}`}
                     data-help={row.connected
                       ? `Open a shell in ${row.cwd}${row.machineName ? ` on ${row.machineName}` : ''}.`
@@ -367,6 +367,7 @@ export function TerminalPanel({ terminal, machines, workspaces, localSettings, b
             <XtermTerminal
               terminal={terminal}
               machine={s.machine}
+              reservationId={s.reservationId}
               cwd={s.cwd}
               active={selected === s.sessionId}
               focusNonce={focusNonce}
