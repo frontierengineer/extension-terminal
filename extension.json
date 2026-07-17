@@ -8,16 +8,17 @@
         "terminal"
       ],
       "sidebars": [],
-      "daemon": true
+      "daemons": [
+        "terminal"
+      ]
     },
-    "host": {
-      "mcpTools": [],
-      "voice": false
-    },
+    "host": null,
     "worker": {
       "runtimes": [],
       "workspaces": [],
-      "daemon": true
+      "daemons": [
+        "terminal"
+      ]
     }
   }
 }

@@ -10,8 +10,8 @@ import './styles.css';
 // reservations) via ExtensionSidebar, and a strip of session tabs (ExtensionTabs) over the
 // active xterm — one live shell per tab. Every target (including the host's own
 // "Server" machine) routes to a worker daemon; the ptys themselves live on the
-// daemon, bridged through this extension's server code over its bus channel
-// (ptyClient).
+// daemon, driven directly over the extension's bus with the shell's target
+// (its reservation, else its machine) on each call (ptyClient).
 //
 // CRITICAL: each session's XtermTerminal mounts EXACTLY ONCE and is kept in the
 // DOM (visibility-toggled, never unmounted) across internal tab switches, so a
@@ -33,7 +33,8 @@ export function register(surfaceProvider: SurfaceProvider): void {
   // drains — so the same op runs from the in-app button, the host modal, an agent
   // (frontier.run_action), or the scheduler. The worker-realm terminal.run_command
   // lives in worker/index.ts.
-  surface.daemon.register({
+  surface.daemons.register({
+    id: 'terminal',
     mount(context) {
       registerActions(context);
       return {};
@@ -52,16 +53,17 @@ export function register(surfaceProvider: SurfaceProvider): void {
     // unmounts every open shell's pty along with it.
     mount(context: SurfaceApplicationContext) {
       const root = createRoot(context.container);
+      const terminal = createPtyClient(context.bus, context.workspaces, context.workers);
       root.render(
         <TerminalPanel
-          terminal={createPtyClient(context.bus)}
+          terminal={terminal}
           machines={context.workers}
           workspaces={context.workspaces}
           localSettings={context.localSettings}
           bus={context.bus}
         />,
       );
-      return { dispose: () => root.unmount() };
+      return { dispose: () => { root.unmount(); terminal.dispose(); } };
     },
   });
 }

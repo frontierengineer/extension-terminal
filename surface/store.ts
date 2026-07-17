@@ -25,7 +25,7 @@ import { useSyncExternalStore } from 'react';
 export interface SpawnTarget {
   machine: string;
   // The reservation whose slot this shell opens in, or null/absent for a
-  // machine-home shell. Routed as the pty's channel target so the platform
+  // machine-home shell. Routed as the pty's bus target so the platform
   // resolves the reservation to its machine.
   reservationId?: string | null;
   cwd?: string;

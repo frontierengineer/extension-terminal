@@ -1,15 +1,16 @@
-// The terminal's daemon-side half: node-pty on the worker machine, driven by
-// this extension's server code over the worker channel. The channel protocol
-// is ours (correlated by ptyId):
+// The terminal's daemon-side half: node-pty on the worker machine, driven
+// directly by the extension's surface over the one bus. The surface addresses
+// this machine (or a reservation it holds) as the call's target; frames out of
+// here are plain publishes the surface subscribes to, correlated by ptyId:
 //
-//   request in:  { type: 'spawn', ptyId, cwd, cols, rows } → { ok } (the ack;
-//                failures still arrive as exit events, matching every other
-//                way a shell dies)
-//   send in:     { type: 'input', ptyId, data }
-//                { type: 'resize', ptyId, cols, rows }
-//                { type: 'kill', ptyId }
-//   send out:    { type: 'data', ptyId, data }
-//                { type: 'exit', ptyId, exitCode, signal, error? }
+//   respond   pty.spawn  { ptyId, cwd, cols, rows } → { ok } (the ack;
+//             failures still arrive as pty.exit events, matching every other
+//             way a shell dies)
+//   subscribe pty.input  { ptyId, data }
+//             pty.resize { ptyId, cols, rows }
+//             pty.kill   { ptyId }
+//   publish   pty.data   { ptyId, data }
+//             pty.exit   { ptyId, exitCode, signal, error? }
 //
 // node-pty is a NATIVE module, resolved via context.modules.import('node-pty')
 // (daemon-located resolution) — it is
@@ -25,7 +26,7 @@ import * as os from 'os';
 import type { WorkerProvider, WorkerDaemonContext } from '../../types';
 
 const PTY_MAX = 32;
-const PTY_DATA_FLUSH_BYTES = 64 * 1024; // bound a single channel payload
+const PTY_DATA_FLUSH_BYTES = 64 * 1024; // bound a single publish payload
 
 interface Pty {
   pid: number;
@@ -47,15 +48,15 @@ export function register(provider: WorkerProvider): void {
   const w = provider.version(1);
   // The worker bundle is a single daemon: all logic and capability live inside
   // its mount(), which receives the flat WorkerDaemonContext.
-  w.daemon.register({ mount });
+  w.daemons.register({ id: 'terminal', mount });
 }
 
 // The terminal worker daemon: runs node-pty next to the machine's files, driven
-// over the worker channel, and registers the run_command action whose closure
-// executes on this machine. Nothing to tear down beyond the daemon itself, so
-// mount returns an empty handle.
+// over the extension's bus (targeted calls land here; frames publish back), and
+// registers the run_command action whose closure executes on this machine. Its
+// dispose kills every live pty, so an extension unload never leaks shells.
 function mount(context: WorkerDaemonContext): { dispose?: () => void } {
-  const { channel } = context;
+  const { bus } = context;
 
   const ptys = new Map<string, { pty: Pty }>();
 
@@ -84,14 +85,14 @@ function mount(context: WorkerDaemonContext): { dispose?: () => void } {
   function sendData(ptyId: string, data: string): void {
     let s = data;
     while (s.length > PTY_DATA_FLUSH_BYTES) {
-      channel.send({ type: 'data', ptyId, data: s.slice(0, PTY_DATA_FLUSH_BYTES) });
+      bus.extension.publish('pty.data', { ptyId, data: s.slice(0, PTY_DATA_FLUSH_BYTES) });
       s = s.slice(PTY_DATA_FLUSH_BYTES);
     }
-    if (s.length) channel.send({ type: 'data', ptyId, data: s });
+    if (s.length) bus.extension.publish('pty.data', { ptyId, data: s });
   }
 
   function sendExit(ptyId: string, exitCode: number, signal?: number, error?: string): void {
-    channel.send({ type: 'exit', ptyId, exitCode, signal: signal || 0, error });
+    bus.extension.publish('pty.exit', { ptyId, exitCode, signal: signal || 0, error });
   }
 
   async function spawn(ptyId: string, cwd: string, cols: number, rows: number): Promise<void> {
@@ -182,12 +183,12 @@ function mount(context: WorkerDaemonContext): { dispose?: () => void } {
     },
   });
 
-  // Spawns arrive as requests so the caller learns the daemon heard it (an
-  // unroutable target rejects on the calling side before this runs); every
-  // later failure still arrives as an exit event.
-  channel.onRequest((msg: any) => {
+  // Spawns arrive as targeted requests so the caller learns the daemon heard
+  // it (an unroutable target rejects on the calling side before this runs);
+  // every later failure still arrives as a pty.exit event.
+  bus.extension.respond('pty.spawn', (msg: any) => {
     const ptyId = typeof msg?.ptyId === 'string' ? msg.ptyId : '';
-    if (!ptyId || msg.type !== 'spawn') return { ok: false, error: 'unknown request' };
+    if (!ptyId) return { ok: false, error: 'ptyId required' };
     void spawn(
       ptyId,
       typeof msg.cwd === 'string' ? msg.cwd : '',
@@ -197,26 +198,41 @@ function mount(context: WorkerDaemonContext): { dispose?: () => void } {
     return { ok: true };
   });
 
-  channel.onMessage((msg: any) => {
+  function livePty(msg: any): Pty | null {
     const ptyId = typeof msg?.ptyId === 'string' ? msg.ptyId : '';
-    if (!ptyId) return;
-    const entry = ptys.get(ptyId);
-    if (!entry) {
-      // The server side already retired this ptyId (kill races exit) — a
-      // synthetic exit would be dropped there anyway.
-      return;
-    }
-    if (msg.type === 'input') {
-      try { entry.pty.write(typeof msg.data === 'string' ? msg.data : ''); }
-      catch (err: any) { console.error(`[terminal-worker] write ${ptyId}: ${err?.message}`); }
-    } else if (msg.type === 'resize') {
-      try { entry.pty.resize(clampCols(msg.cols), clampRows(msg.rows)); }
-      catch (err: any) { console.error(`[terminal-worker] resize ${ptyId}: ${err?.message}`); }
-    } else if (msg.type === 'kill') {
-      try { entry.pty.kill(); } catch (err: any) { console.error(`[terminal-worker] kill ${ptyId}: ${err?.message}`); }
-      // onExit cleans up the map.
-    }
+    if (!ptyId) return null;
+    // A miss means this side already retired the ptyId (kill races exit) — a
+    // synthetic exit would be dropped by the surface anyway.
+    return ptys.get(ptyId)?.pty ?? null;
+  }
+
+  bus.extension.subscribe('pty.input', (msg: any) => {
+    const pty = livePty(msg);
+    if (!pty) return;
+    try { pty.write(typeof msg.data === 'string' ? msg.data : ''); }
+    catch (err: any) { console.error(`[terminal-worker] write ${msg?.ptyId}: ${err?.message}`); }
   });
 
-  return {};
+  bus.extension.subscribe('pty.resize', (msg: any) => {
+    const pty = livePty(msg);
+    if (!pty) return;
+    try { pty.resize(clampCols(msg.cols), clampRows(msg.rows)); }
+    catch (err: any) { console.error(`[terminal-worker] resize ${msg?.ptyId}: ${err?.message}`); }
+  });
+
+  bus.extension.subscribe('pty.kill', (msg: any) => {
+    const pty = livePty(msg);
+    if (!pty) return;
+    try { pty.kill(); } catch (err: any) { console.error(`[terminal-worker] kill ${msg?.ptyId}: ${err?.message}`); }
+    // onExit cleans up the map.
+  });
+
+  // The daemon's teardown: kill every live pty so an extension unload (or a
+  // daemon reload) never leaks shell processes on the machine.
+  return { dispose: () => {
+    for (const [ptyId, entry] of Array.from(ptys.entries())) {
+      try { entry.pty.kill(); } catch { /* already gone */ }
+      ptys.delete(ptyId);
+    }
+  } };
 }
