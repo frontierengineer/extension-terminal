@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExtensionSidebar, ExtensionTabs, Split, EmptyState } from '@frontierengineer/ui';
 import { ActionButton } from '@frontierengineer/ui/useAction';
-import type { WorkerRegistry, Reservation, SurfaceContext, Workspaces } from '../../../types';
+import type { Workers, Reservation, SurfaceContext, Workspaces } from '../../../types';
 import type { PtyClient } from '../ptyClient';
 import { XtermTerminal } from './XtermTerminal';
 import {
@@ -58,7 +58,7 @@ interface ReservationGroup {
 const EXPANDED_KEY = 'tree.expanded';
 type GroupId = 'machines' | 'reservations';
 
-function listMachineRows(machines: WorkerRegistry): TargetMachine[] {
+function listMachineRows(machines: Workers): TargetMachine[] {
   return machines.list()
     .map((m) => ({ id: m.id, name: m.name, connected: m.connected }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -71,12 +71,12 @@ function listReservationRows(reservations: Reservation[], machineRows: TargetMac
   const machineById = new Map(machineRows.map((m) => [m.id, m]));
   const out: TargetReservation[] = [];
   for (const r of reservations) {
-    const cwd = r.descriptor.slotDir || r.descriptor.canonicalDir;
+    const cwd = r.slot.slotDirectory || r.slot.canonicalDirectory;
     if (!cwd) continue;
     const m = machineById.get(r.machine);
     out.push({
       reservationId: r.id,
-      name: r.description,
+      name: r.key,
       extensionId: r.owner || 'other',
       machine: r.machine,
       machineName: m?.name ?? null,
@@ -99,7 +99,7 @@ function Caret({ open }: { open: boolean }) {
 
 export function TerminalPanel({ terminal, machines, workspaces, localSettings, bus }: {
   terminal: PtyClient;
-  machines: WorkerRegistry;
+  machines: Workers;
   workspaces: Workspaces;
   localSettings: SurfaceContext['localSettings'];
   bus: SurfaceContext['bus'];
@@ -134,7 +134,7 @@ export function TerminalPanel({ terminal, machines, workspaces, localSettings, b
   const refresh = useCallback(async () => {
     const nextMachines = listMachineRows(machines);
     let reservations: Reservation[] = [];
-    try { reservations = await workspaces.reservations(); } catch { /* keep the last good list */ }
+    try { reservations = await workspaces.reservations({}); } catch { /* keep the last good list */ }
     setCatalogue({ machines: nextMachines, reservations: listReservationRows(reservations, nextMachines) });
   }, [machines, workspaces]);
 

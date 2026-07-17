@@ -29,7 +29,7 @@
 // The worker-realm `terminal.run_command` lives in worker/index.ts, not here —
 // its run() must execute next to the machine's files.
 
-import type { WorkerRegistry, Reservation, SurfaceDaemonContext, Workspaces } from '../../types';
+import type { Workers, Reservation, SurfaceDaemonContext, Workspaces } from '../../types';
 
 // localSettings keys the action writes and the panel drains, doubling as the
 // bus.extension event topics the action pokes for the live case. OPEN carries the
@@ -76,7 +76,7 @@ function machineValue(id: string): string { return `machine:${id}`; }
 function reservationValue(id: string): string { return `reservation:${id}`; }
 
 // How long the optional reservation lookup may take before the picker / resolver
-// gives up on it. workspaces.reservations() verifies every live slot, and that
+// gives up on it. workspaces.reservations({}) verifies every live slot, and that
 // verify can round-trip to a slow/wedged worker (an isolated slot probes its own
 // daemon); the target picker must never hang waiting on it — connected machines
 // are always offerable on their own. Mirrors the server's DEFAULT_CWD_BUDGET_MS.
@@ -102,7 +102,7 @@ interface ResolvedTarget { machine: string; cwd?: string; label: string; }
 // is connected. Disconnected targets are omitted — the picker only offers what
 // will actually open.
 async function listTargetOptions(
-  machines: WorkerRegistry,
+  machines: Workers,
   workspaces: Workspaces,
 ): Promise<{ value: string; label: string; description: string | null }[]> {
   const out: { value: string; label: string; description: string | null }[] = [];
@@ -115,21 +115,21 @@ async function listTargetOptions(
   // slot verify hold the picker hostage. On timeout (or fault) we just offer the
   // connected machines, which is the common target anyway.
   let reservations: Reservation[] = [];
-  try { reservations = await withTimeout(workspaces.reservations(), RESERVATIONS_BUDGET_MS); } catch { /* offer machines only */ }
+  try { reservations = await withTimeout(workspaces.reservations({}), RESERVATIONS_BUDGET_MS); } catch { /* offer machines only */ }
   for (const r of reservations) {
-    const cwd = r.descriptor.slotDir || r.descriptor.canonicalDir;
+    const cwd = r.slot.slotDirectory || r.slot.canonicalDirectory;
     if (!cwd) continue;
     const m = machineById.get(r.machine);
     if (!m?.connected) continue;
     const where = m.name ? `${cwd} on ${m.name}` : cwd;
-    out.push({ value: reservationValue(r.id), label: `${r.description} (${r.owner || 'other'})`, description: where });
+    out.push({ value: reservationValue(r.id), label: `${r.key} (${r.owner || 'other'})`, description: where });
   }
   return out;
 }
 
 // The default target: the host's co-located "Server", else the first connected
 // machine. Null when nothing is connected.
-function defaultTarget(machines: WorkerRegistry): ResolvedTarget | null {
+function defaultTarget(machines: Workers): ResolvedTarget | null {
   const connected = machines.list().filter((m) => m.connected);
   if (connected.length === 0) return null;
   const server = connected.find((m) => m.name === SERVER_MACHINE_NAME) ?? connected[0];
@@ -140,7 +140,7 @@ function defaultTarget(machines: WorkerRegistry): ResolvedTarget | null {
 // Null when it doesn't resolve (a stale id, or its machine went away / dropped).
 async function resolveTarget(
   value: string,
-  machines: WorkerRegistry,
+  machines: Workers,
   workspaces: Workspaces,
 ): Promise<ResolvedTarget | null> {
   if (value.startsWith('machine:')) {
@@ -151,12 +151,12 @@ async function resolveTarget(
   if (value.startsWith('reservation:')) {
     const id = value.slice('reservation:'.length);
     let reservations: Reservation[] = [];
-    try { reservations = await withTimeout(workspaces.reservations(), RESERVATIONS_BUDGET_MS); } catch { return null; }
+    try { reservations = await withTimeout(workspaces.reservations({}), RESERVATIONS_BUDGET_MS); } catch { return null; }
     const r = reservations.find((x) => x.id === id);
     if (!r) return null;
-    const cwd = r.descriptor.slotDir || r.descriptor.canonicalDir;
+    const cwd = r.slot.slotDirectory || r.slot.canonicalDirectory;
     const m = machines.get(r.machine);
-    return cwd && m?.connected ? { machine: r.machine, cwd, label: r.description } : null;
+    return cwd && m?.connected ? { machine: r.machine, cwd, label: r.key } : null;
   }
   return null;
 }

@@ -110,7 +110,7 @@ function mount(context: HostDaemonContext): { dispose?: () => void } {
   // machine here — it resolves the same way.
   //
   // CRITICAL: this is on the spawn critical path, so it must never BLOCK opening
-  // a shell. workspaces.reservations() verifies every live slot, and that verify
+  // a shell. workspaces.reservations({}) verifies every live slot, and that verify
   // can round-trip to a *different* machine's worker (an isolated slot probes its
   // own daemon); if that machine is slow or wedged, the lookup can stall for a
   // long time — and a shell on the host's own "Server" would then be held hostage
@@ -119,9 +119,9 @@ function mount(context: HostDaemonContext): { dispose?: () => void } {
   // convenience default cwd is never worth a hung terminal.
   async function resolveDefaultCwd(machine: string): Promise<string> {
     try {
-      const reservations = await withTimeout(context.workspaces.reservations(), DEFAULT_CWD_BUDGET_MS);
+      const reservations = await withTimeout(context.workspaces.reservations({}), DEFAULT_CWD_BUDGET_MS);
       for (const r of reservations) {
-        if (r.machine === machine && r.descriptor.slotDir) return r.descriptor.slotDir;
+        if (r.machine === machine && r.slot.slotDirectory) return r.slot.slotDirectory;
       }
     } catch { /* timed out or faulted — fall through to the worker's home */ }
     return '';
