@@ -12,7 +12,6 @@
         "terminal"
       ]
     },
-    "host": null,
     "worker": {
       "runtimes": [],
       "workspaces": [],

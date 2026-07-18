@@ -167,16 +167,19 @@ function mount(context: WorkerDaemonContext): { dispose?: () => void } {
       const cwd = String(args.cwd ?? '').trim() || os.homedir();
       // execFile (NOT exec): no shell, command + args array — injection-safe.
       const { execFile } = context.modules.require('child_process') as typeof import('child_process');
-      return await new Promise((resolve) => {
+      return await new Promise<{
+        command: string; args: string[]; cwd: string; exitCode: number;
+        stdout: string; stderr: string; error: string;
+      }>((resolve) => {
         execFile(command, argv, { cwd, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 }, (err: any, stdout: string, stderr: string) => {
           resolve({
             command,
             args: argv,
-            cwd,
+            cwd: cwd ?? '',
             exitCode: err && typeof err.code === 'number' ? err.code : (err ? 1 : 0),
             stdout: String(stdout ?? ''),
             stderr: String(stderr ?? ''),
-            error: err && err.code === undefined ? String(err.message || err) : undefined,
+            error: err && err.code === undefined ? String(err.message || err) : '',
           });
         });
       });
